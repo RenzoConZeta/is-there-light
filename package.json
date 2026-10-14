@@ -1,0 +1,26 @@
+{
+  "name": "is-there-electricity",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "packageManager": "pnpm@10.0.0",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev": "pnpm -r --parallel dev",
+    "dev:web": "pnpm --filter @app/web dev",
+    "dev:collector": "pnpm --filter @app/collector dev",
+    "build": "pnpm -r build",
+    "preview": "pnpm --filter @app/web preview",
+    "start": "pnpm -r --parallel start",
+    "start:web": "pnpm --filter @app/web start",
+    "start:collector": "pnpm --filter @app/collector start",
+    "typecheck": "pnpm -r typecheck",
+    "lint": "pnpm -r lint",
+    "test": "pnpm -r test",
+    "db:migrate": "pnpm --filter @app/db run migrate",
+    "db:reset": "pnpm --filter @app/db run reset"
+  }
+}
