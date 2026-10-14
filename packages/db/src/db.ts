@@ -2,13 +2,14 @@ import Database from "better-sqlite3";
 import { readFileSync } from "fs";
 import { dirname, join } from "path";
 import { fileURLToPath } from "url";
+import { resolveDbPath } from "./paths.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
 let db: Database.Database | null = null;
 
-export function getDb(dbPath: string = process.env.DB_PATH || "./data/charge.db"): Database.Database {
+export function getDb(dbPath: string = resolveDbPath()): Database.Database {
   if (db) {
     return db;
   }

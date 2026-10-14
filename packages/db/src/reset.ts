@@ -1,15 +1,14 @@
-import { getDb } from "./db.js";
-import { existsSync, unlinkSync } from "fs";
+import { existsSync, mkdirSync, unlinkSync } from "fs";
 import { dirname } from "path";
-import { mkdirSync } from "fs";
+import { resolveDbPath } from "./paths.js";
 
 export function reset(dbPath?: string): void {
-  const path = dbPath || process.env.DB_PATH || "./data/charge.db";
-  
+  const path = dbPath || resolveDbPath();
+
   if (existsSync(path)) {
     unlinkSync(path);
   }
-  
+
   const dir = dirname(path);
   if (!existsSync(dir)) {
     mkdirSync(dir, { recursive: true });

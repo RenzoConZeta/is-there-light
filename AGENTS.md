@@ -73,7 +73,7 @@ Todos los comandos se ejecutan desde la raíz con `pnpm`.
 
 | Variable | Valor por defecto | Descripción |
 |---|---|---|
-| `DB_PATH` | `./data/charge.db` | Ruta al archivo SQLite |
+| `DB_PATH` | `./data/charge.db` | Ruta al archivo SQLite (las rutas relativas se anclan a la raíz del repo, no al cwd) |
 | `COLLECTOR_INTERVAL_MS` | `2000` | Intervalo (ms) para polling como fallback (macOS/Windows) |
 | `POWER_WATCH_DEBOUNCE_MS` | `100` | Debounce (ms) al usar `fs.watch()` (Linux) para evitar eventos duplicados |
 | `PORT` | `4321` | Puerto del servidor Astro |

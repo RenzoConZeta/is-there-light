@@ -1,7 +1,7 @@
 import { existsSync, mkdirSync } from "fs";
 import { dirname, join } from "path";
 import { fileURLToPath } from "url";
-import { closeDb, initSchema, insertChargeEvent } from "@app/db";
+import { closeDb, initSchema, insertChargeEvent, resolveDbPath } from "@app/db";
 import { detectPlatform, getStrategy, type Platform, type PowerStrategy } from "./platform.js";
 import { getWasPlugged, onPowerChange } from "./state.js";
 import { resolveIntervalMs, startPolling } from "./powerPoller.js";
@@ -40,17 +40,6 @@ function loadEnvFiles(): void {
       logWarn(`No se pudo cargar ${path}`, error);
     }
   }
-}
-
-/**
- * Resuelve el archivo SQLite. Si `DB_PATH` no está definido se usa el default
- * del AGENTS.md (`./data/charge.db`) pero anclado a la raíz del repo: pnpm
- * ejecuta los scripts con cwd en el paquete, y web y collector deben compartir
- * el mismo archivo.
- */
-function resolveDbPath(): string {
-  const configured = process.env.DB_PATH?.trim();
-  return configured ? configured : join(REPO_ROOT, "data", "charge.db");
 }
 
 /** Registra la lectura: sólo persiste cambios reales de estado. */
