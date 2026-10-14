@@ -1,0 +1,146 @@
+---
+import { listChargeEvents } from "../lib/events.js";
+
+export const prerender = false;
+
+const events = listChargeEvents({ limit: 200 });
+
+const dateTimeFormatter = new Intl.DateTimeFormat("es-ES", {
+  dateStyle: "medium",
+  timeStyle: "medium",
+});
+
+function formatOccurredAt(iso: string): string {
+  const date = new Date(iso);
+  return Number.isNaN(date.getTime()) ? iso : dateTimeFormatter.format(date);
+}
+
+function labelFor(type: string): string {
+  return type === "plug" ? "Conectado" : "Desconectado";
+}
+---
+
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Historial de energía</title>
+    <style>
+      :root {
+        color-scheme: light dark;
+        --bg: #0f1115;
+        --panel: #171a21;
+        --border: #262b36;
+        --text: #e6e8ee;
+        --muted: #9aa3b2;
+        --plug: #2f9e44;
+        --unplug: #e03131;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        padding: 2rem 1rem;
+        font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+        background: var(--bg);
+        color: var(--text);
+      }
+
+      main {
+        max-width: 720px;
+        margin: 0 auto;
+      }
+
+      h1 {
+        font-size: 1.5rem;
+        margin: 0 0 0.25rem;
+      }
+
+      .subtitle {
+        margin: 0 0 1.5rem;
+        color: var(--muted);
+        font-size: 0.9rem;
+      }
+
+      .empty {
+        padding: 2rem;
+        text-align: center;
+        border: 1px dashed var(--border);
+        border-radius: 12px;
+        color: var(--muted);
+      }
+
+      ul {
+        list-style: none;
+        margin: 0;
+        padding: 0;
+        display: flex;
+        flex-direction: column;
+        gap: 0.5rem;
+      }
+
+      li {
+        display: flex;
+        align-items: center;
+        gap: 0.75rem;
+        padding: 0.75rem 1rem;
+        background: var(--panel);
+        border: 1px solid var(--border);
+        border-radius: 10px;
+      }
+
+      .badge {
+        flex: 0 0 auto;
+        padding: 0.15rem 0.6rem;
+        border-radius: 999px;
+        font-size: 0.75rem;
+        font-weight: 600;
+        color: #fff;
+      }
+
+      .badge.plug {
+        background: var(--plug);
+      }
+
+      .badge.unplug {
+        background: var(--unplug);
+      }
+
+      .occurred {
+        font-variant-numeric: tabular-nums;
+      }
+
+      .source {
+        margin-left: auto;
+        color: var(--muted);
+        font-size: 0.8rem;
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>Historial de energía</h1>
+      <p class="subtitle">Cambios de estado de carga registrados por el collector.</p>
+
+      {
+        events.length === 0 ? (
+          <p class="empty">Todavía no hay eventos registrados.</p>
+        ) : (
+          <ul>
+            {events.map((event) => (
+              <li>
+                <span class={`badge ${event.type}`}>{labelFor(event.type)}</span>
+                <span class="occurred">{formatOccurredAt(event.occurred_at)}</span>
+                <span class="source">{event.source}</span>
+              </li>
+            ))}
+          </ul>
+        )
+      }
+    </main>
+  </body>
+</html>

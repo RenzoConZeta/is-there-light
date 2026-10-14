@@ -134,7 +134,7 @@
 ## Fase 5: Web con Astro
 
 ### T-014: Crear `apps/web` con Astro mínimo (TypeScript)
-- [ ] **T-014: Crear `apps/web` con Astro mínimo (TypeScript)**
+- [x] **T-014: Crear `apps/web` con Astro mínimo (TypeScript)**
   - **Duración:** < 15 min
   - **Dependencias:** T-013
   - **RF:**
@@ -144,7 +144,7 @@
   - **Hecho cuando:** `apps/web/package.json` existe, `astro.config.mjs` es parseable y `tsconfig.json` existe.
 
 ### T-015: Crear página principal con historial
-- [ ] **T-015: Crear página principal con historial**
+- [x] **T-015: Crear página principal con historial**
   - **Duración:** < 15 min
   - **Dependencias:** T-014
   - **RF:**
@@ -153,7 +153,7 @@
   - **Hecho cuando:** `index.astro` existe y referencia `events` con campos `id`, `type`, `occurred_at`.
 
 ### T-016: Crear ruta API para leer eventos
-- [ ] **T-016: Crear ruta API para leer eventos**
+- [x] **T-016: Crear ruta API para leer eventos**
   - **Duración:** < 10 min
   - **Dependencias:** T-015
   - **RF:**
@@ -165,7 +165,7 @@
 ## Fase 6: Integración, verificación y pulido
 
 ### T-017: Añadir `.env.example`
-- [ ] **T-017: Añadir `.env.example`**
+- [x] **T-017: Añadir `.env.example`**
   - **Duración:** < 5 min
   - **Dependencias:** T-016
   - **RF:**
@@ -173,7 +173,7 @@
   - **Hecho cuando:** `.env.example` existe y contiene las 6 variables con valores mostrados.
 
 ### T-018: Verificar `typecheck` en todos los workspaces
-- [ ] **T-018: Verificar `typecheck` en todos los workspaces**
+- [x] **T-018: Verificar `typecheck` en todos los workspaces**
   - **Duración:** < 10 min
   - **Dependencias:** T-017
   - **RF:**
@@ -182,7 +182,7 @@
   - **Hecho cuando:** Salida de `pnpm typecheck` finaliza con `0 errors`.
 
 ### T-019: Smoke test manual (collector + web)
-- [ ] **T-019: Smoke test manual (collector + web)**
+- [x] **T-019: Smoke test manual (collector + web)**
   - **Duración:** < 15 min
   - **Dependencias:** T-018
   - **RF:**
@@ -193,7 +193,7 @@
   - **Hecho cuando:** Se generan >= 0 eventos sin duplicados al arrancar y solo 1 por transición real. `/api/events` responde 200 con `Content-Type: application/json`.
 
 ### T-020: Hardening mínimo del repo
-- [ ] **T-020: Hardening mínimo del repo**
+- [x] **T-020: Hardening mínimo del repo**
   - **Duración:** < 10 min
   - **Dependencias:** T-019
   - **RF:**

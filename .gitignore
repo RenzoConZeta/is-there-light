@@ -2,6 +2,7 @@ node_modules/
 dist/
 .astro/
 data/*.db
+data/*.db-*
 data/*.sqlite
 data/*.sqlite3
 .env
