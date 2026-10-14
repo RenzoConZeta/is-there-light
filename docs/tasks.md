@@ -49,7 +49,7 @@
 ## Fase 2: Paquetes compartidos
 
 ### T-006: Crear `packages/shared` con tipos
-- [ ] **T-006: Crear `packages/shared` con tipos**
+- [x] **T-006: Crear `packages/shared` con tipos**
   - **Duración:** < 10 min
   - **Dependencias:** T-005
   - **RF:**
@@ -59,8 +59,8 @@
     - RF-010: Debe existir `packages/shared/tsconfig.json` extendiendo `../../tsconfig.base.json`.
   - **Hecho cuando:** `cat packages/shared/src/types.ts` contiene `ChargeEventType` y `cat packages/shared/src/index.ts` exporta desde `./types.js` o `./types`.
 
-### T-007: Crear `packages/shared/tsconfig.build.json` (mínimo)
-- [ ] **T-007: Crear `packages/shared/tsconfig.build.json`**
+### T-007: Crear `packages/shared/tsconfig.build.json`
+- [x] **T-007: Crear `packages/shared/tsconfig.build.json`**
   - **Duración:** < 5 min
   - **Dependencias:** T-006
   - **RF:**
@@ -70,7 +70,7 @@
 ## Fase 3: Capa de datos SQLite
 
 ### T-008: Crear `packages/db` con package.json y tsconfig
-- [ ] **T-008: Crear `packages/db` con package.json y tsconfig**
+- [x] **T-008: Crear `packages/db` con package.json y tsconfig**
   - **Duración:** < 10 min
   - **Dependencias:** T-007
   - **RF:**
@@ -79,7 +79,7 @@
   - **Hecho cuando:** `packages/db/package.json` lista `better-sqlite3` y `@app/shared` en `dependencies`.
 
 ### T-009: Crear esquema, init y helpers en `packages/db`
-- [ ] **T-009: Crear esquema, init y helpers en `packages/db`**
+- [x] **T-009: Crear esquema, init y helpers en `packages/db`**
   - **Duración:** < 20 min
   - **Dependencias:** T-008
   - **RF:**

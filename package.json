@@ -22,5 +22,8 @@
     "test": "pnpm -r test",
     "db:migrate": "pnpm --filter @app/db run migrate",
     "db:reset": "pnpm --filter @app/db run reset"
+  },
+  "devDependencies": {
+    "typescript": "^5.8.3"
   }
 }
