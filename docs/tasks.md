@@ -93,7 +93,7 @@
 ## Fase 4: Collector (detección plug/unplug)
 
 ### T-010: Crear `apps/collector` con package.json, tsconfig y deps
-- [ ] **T-010: Crear `apps/collector` con package.json, tsconfig y deps**
+- [x] **T-010: Crear `apps/collector` con package.json, tsconfig y deps**
   - **Duración:** < 10 min
   - **Dependencias:** T-009
   - **RF:**
@@ -102,7 +102,7 @@
   - **Hecho cuando:** `apps/collector/package.json` referencia `@app/db` y `@app/shared`.
 
 ### T-011: Crear `detectPlug.ts` y `state.ts`
-- [ ] **T-011: Crear `detectPlug.ts` y `state.ts`**
+- [x] **T-011: Crear `detectPlug.ts` y `state.ts`**
   - **Duración:** < 15 min
   - **Dependencias:** T-010
   - **RF:**
@@ -111,7 +111,7 @@
   - **Hecho cuando:** `detectPlug.ts` exporta `isPlugged()` o `detectPlug()` y `state.ts` implementa la regla "sin evento al arrancar".
 
 ### T-012: Crear `powerPoller.ts`, `powerWatcher.ts`, `platform.ts`
-- [ ] **T-012: Crear `powerPoller.ts`, `powerWatcher.ts`, `platform.ts`**
+- [x] **T-012: Crear `powerPoller.ts`, `powerWatcher.ts`, `platform.ts`**
   - **Duración:** < 20 min
   - **Dependencias:** T-011
   - **RF:**
@@ -121,7 +121,7 @@
   - **Hecho cuando:** Los tres archivos existen, exportan sus funciones y `powerWatcher.ts` menciona "cualquiera de los AC*/online".
 
 ### T-013: Crear `index.ts` del collector
-- [ ] **T-013: Crear `index.ts` del collector**
+- [x] **T-013: Crear `index.ts` del collector**
   - **Duración:** < 15 min
   - **Dependencias:** T-012
   - **RF:**
