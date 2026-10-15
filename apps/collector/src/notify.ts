@@ -37,7 +37,7 @@ async function notify(type: keyof typeof MESSAGES, occurredAt: string): Promise<
       return;
     }
 
-    console.log(`[telegram] ${type} notification sent`);
+    console.log(`[telegram] ${type} notification sent (updated)`);
   } catch (err) {
     console.warn(`[telegram] failed to send ${type} notification:`, err);
   }

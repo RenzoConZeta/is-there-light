@@ -61,6 +61,12 @@ Todos los comandos se ejecutan desde la raíz con `pnpm`.
 | `pnpm start` | Inicia `web` y `collector` en modo producción |
 | `pnpm start:web` | Inicia únicamente la web en producción |
 | `pnpm start:collector` | Inicia únicamente el collector en producción |
+| `pnpm pm2:start` | Compila y arranca el collector con pm2 |
+| `pnpm pm2:stop` | Detiene el collector con pm2 |
+| `pnpm pm2:restart` | Reinicia el collector con pm2 |
+| `pnpm pm2:status` | Muestra el estado de pm2 |
+| `pnpm pm2:logs` | Sigue los logs del collector |
+| `pnpm pm2:save` | Guarda la lista actual para resurrect tras reinicio |
 | `pnpm typecheck` | Ejecuta `tsc --noEmit` en todos los workspaces |
 | `pnpm lint` | Lint (definir al configurar eslint) |
 | `pnpm test` | Tests (definir al configurar vitest/jest) |
@@ -143,6 +149,19 @@ apps/collector/src/
 **Sí.** Si el `collector` se detiene, cualquier transición `plug/unplug` durante ese tiempo **no se registrará**.
 
 Para uso local (MVP) basta con ejecutarlo en segundo plano (`pnpm dev:collector`, `tmux`, etc.). Para dejarlo persistente entre inicios de sesión se pueden usar `launchd` (macOS), `systemd --user` (Linux) o `pm2`.
+
+En producción local (o para dejarlo corriendo entre reinicios) se usa **pm2** desde la raíz del repo:
+
+| Comando | Descripción |
+|---|---|
+| `pnpm pm2:start` | Compila (`pnpm build`) y arranca el collector con pm2 (ecosystem.config.cjs) |
+| `pnpm pm2:stop` | Detiene el collector |
+| `pnpm pm2:restart` | Reinicia el collector |
+| `pnpm pm2:status` | Muestra el estado de pm2 |
+| `pnpm pm2:logs` | Muestra logs del collector en tiempo real |
+| `pnpm pm2:save` | Guarda la lista para que pm2 la vuelva a cargar tras un reinicio del sistema |
+
+Los logs se guardan en `data/logs/collector.out.log` y `data/logs/collector.err.log`. Tras `pnpm pm2:start`, recuerda ejecutar `pnpm pm2:save` para persistir entre reinicios. Para autorresurrect al iniciar sesión, puedes usar `pm2 startup` (macOS genera un LaunchAgent o las instrucciones necesarias) y confirmar con `pm2 save`.
 
 Con la estrategia híbrida el consumo es **despreciable**: ~0% CPU en reposo con `fs.watch()` y < 0.01% con polling cada 2s.
 
