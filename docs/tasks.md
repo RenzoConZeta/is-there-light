@@ -1,7 +1,7 @@
 # tasks.md
 
 > Ordenado por dependencia. Todas las tareas tienen una duración estimada < 30 min.  
-> Objetivo: MVP local para registrar `plug`/`unplug` con collector + Astro + SQLite (`better-sqlite3`).
+> Objetivo: MVP local para registrar `plug`/`unplug` con collector + Astro y libSQL/Turso (con fallback a SQLite local).
 
 ## Fase 1: Base del monorepo
 
@@ -67,16 +67,16 @@
     - RF-011: Debe extender `./tsconfig.json` con `outDir: "dist"`, `declaration: true`, `declarationMap: true`, `emitDeclarationOnly: false` o acorde a build elegido.
   - **Hecho cuando:** `tsconfig.build.json` existe en `packages/shared/` y referencia `outDir: "dist"`.
 
-## Fase 3: Capa de datos SQLite
+## Fase 3: Capa de datos libSQL/Turso
 
 ### T-008: Crear `packages/db` con package.json y tsconfig
 - [x] **T-008: Crear `packages/db` con package.json y tsconfig**
   - **Duración:** < 10 min
   - **Dependencias:** T-007
   - **RF:**
-    - RF-012: Debe existir `packages/db/package.json` con `name: "@app/db"`, `type: "module"`, dependencia `better-sqlite3` y dependencia a `@app/shared`.
+    - RF-012: Debe existir `packages/db/package.json` con `name: "@app/db"`, `type: "module"`, dependencia `@libsql/client` y dependencia a `@app/shared`.
     - RF-013: Debe existir `packages/db/tsconfig.json` extendiendo `../../tsconfig.base.json` con `paths` o referencias mínimas.
-  - **Hecho cuando:** `packages/db/package.json` lista `better-sqlite3` y `@app/shared` en `dependencies`.
+  - **Hecho cuando:** `packages/db/package.json` lista `@libsql/client` y `@app/shared` en `dependencies`.
 
 ### T-009: Crear esquema, init y helpers en `packages/db`
 - [x] **T-009: Crear esquema, init y helpers en `packages/db`**
@@ -84,11 +84,11 @@
   - **Dependencias:** T-008
   - **RF:**
     - RF-014: `packages/db/src/schema.sql` debe definir tabla `charge_events` con campos `id`, `type`, `occurred_at`, `source`, `created_at` y `CHECK (type IN ('plug','unplug'))`.
-    - RF-015: `packages/db/src/db.ts` debe crear conexión con `better-sqlite3`, aplicar `PRAGMA journal_mode = WAL;`, `PRAGMA foreign_keys = ON;` (opcional) y exponer `getDb(path)`.
+    - RF-015: `packages/db/src/db.ts` debe crear el cliente con `@libsql/client` (`createClient`), resolver la URL con Turso prioritario y fallback `file:<DB_PATH>` local, y exponer `getDb()`. (Ya **no** se usa `PRAGMA journal_mode = WAL`: con Turso la concurrencia la gestiona el servidor.)
     - RF-016: `packages/db/src/migrate.ts` debe ejecutar `schema.sql` con `CREATE TABLE IF NOT EXISTS`.
     - RF-017: `packages/db/src/queries.ts` debe exportar `insertChargeEvent({type, occurred_at, source})` y `getChargeEvents({limit, offset})`.
     - RF-018: `packages/db/src/index.ts` debe re-exportar helpers y tipos necesarios.
-  - **Hecho cuando:** Existe `schema.sql`, `db.ts`, `migrate.ts`, `queries.ts`, `index.ts` en `packages/db/src/` y `index.ts` importa/expone `getChargeEvents`, `insertChargeEvent`, `initSchema` o `migrate`.
+  - **Hecho cuando:** Existe `schema.sql`, `db.ts`, `migrate.ts`, `queries.ts`, `index.ts` (y `paths.ts`, ver T-022) en `packages/db/src/` y `index.ts` importa/expone `getChargeEvents`, `insertChargeEvent`, `initSchema` o `migrate`.
 
 ## Fase 4: Collector (detección plug/unplug)
 
@@ -126,7 +126,7 @@
   - **Dependencias:** T-012
   - **RF:**
     - RF-026: Debe cargar `.env` si existe (sin romper si no hay), leer `DB_PATH`, `COLLECTOR_INTERVAL_MS`, `POWER_WATCH_DEBOUNCE_MS`.
-    - RF-027: Debe inicializar DB (`initSchema`/`migrate`) y activar WAL.
+    - RF-027: Debe inicializar la DB con `initSchema` (idempotente).
     - RF-028: Debe elegir estrategia según `platform.ts`, usar `state.onPowerChange` para **solo guardar transiciones** `plug/unplug` con `occurred_at = new Date().toISOString()`, `source = 'collector'`.
     - RF-029: Debe loggear `info/warn` sin lanzar excepción no controlada. No debe crear evento en arranque.
   - **Hecho cuando:** `apps/collector/src/index.ts` existe y contiene las referencias a `platform`, `detectPlug`, `state`, `@app/db`.
@@ -169,8 +169,8 @@
   - **Duración:** < 5 min
   - **Dependencias:** T-016
   - **RF:**
-    - RF-038: Debe listar `DB_PATH`, `COLLECTOR_INTERVAL_MS`, `POWER_WATCH_DEBOUNCE_MS`, `PORT`, `HOST`, `NODE_ENV` con sus valores por defecto del AGENTS.md.
-  - **Hecho cuando:** `.env.example` existe y contiene las 6 variables con valores mostrados.
+    - RF-038: Debe listar `TURSO_DATABASE_URL`, `TURSO_AUTH_TOKEN`, `DB_PATH`, `COLLECTOR_INTERVAL_MS`, `POWER_WATCH_DEBOUNCE_MS`, `PORT`, `HOST`, `NODE_ENV` y el bloque opcional de Telegram (`TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID`, `TELEGRAM_ENABLED`) con sus valores por defecto del AGENTS.md.
+  - **Hecho cuando:** `.env.example` existe y contiene las variables con valores mostrados (Turso comentado como prioritario y Telegram opcional).
 
 ### T-018: Verificar `typecheck` en todos los workspaces
 - [x] **T-018: Verificar `typecheck` en todos los workspaces**
@@ -202,6 +202,72 @@
     - RF-047: Confirmar `occurred_at` usa `toISOString()` (UTC).
   - **Hecho cuando:** `.gitignore` incluye `data/*.db` y revisión rápida de imports cumple límites de monorepo.
 
+## Fase 7: Turso, notificaciones y despliegue
+
+### T-021: Migrar `packages/db` a libSQL/Turso
+- [x] **T-021: Migrar `packages/db` a libSQL/Turso**
+  - **Duración:** < 30 min
+  - **Dependencias:** T-020
+  - **RF:**
+    - RF-048: `packages/db/package.json` debe depender de `@libsql/client` (retirando `better-sqlite3`) y `db.ts` debe crear el cliente con `createClient`.
+    - RF-049: `resolveClientConfig()` debe priorizar `TURSO_DATABASE_URL` (+ `TURSO_AUTH_TOKEN`) y, sin ella, usar `file:<DB_PATH>` local; con `NODE_ENV=production` y sin Turso debe registrar un `warning` (filesystem efímero).
+    - RF-050: `initSchema()` debe ser idempotente (`executeMultiple` sobre `schema.sql`) y **sin** `PRAGMA journal_mode = WAL`.
+    - RF-051: La carga del `.env` de la raíz (`process.loadEnvFile`) debe ser centralizada en `packages/db` para que web, collector y scripts compartan configuración.
+  - **Hecho cuando:** `pnpm db:migrate` crea la tabla tanto contra Turso como contra el archivo local y no quedan referencias a `better-sqlite3`.
+
+### T-022: Resolver la ruta del SQLite compartido
+- [x] **T-022: Resolver la ruta del SQLite compartido**
+  - **Duración:** < 15 min
+  - **Dependencias:** T-021
+  - **RF:**
+    - RF-052: `packages/db/src/paths.ts` debe exponer `findRepoRoot()` detectando la raíz por la presencia de `pnpm-workspace.yaml`.
+    - RF-053: `resolveDbPath()` debe anclar un `DB_PATH` relativo a la raíz del monorepo y usar `<repo>/data/charge.db` por defecto.
+  - **Hecho cuando:** `packages/db/src/index.ts` re-exporta `resolveDbPath`/`findRepoRoot` y `DB_PATH=./data/charge.db` apunta al mismo archivo desde cualquier workspace.
+
+### T-023: Script `db:reset` sobre libSQL
+- [x] **T-023: Script `db:reset` sobre libSQL**
+  - **Duración:** < 10 min
+  - **Dependencias:** T-022
+  - **RF:**
+    - RF-054: `packages/db/src/reset.ts` debe ejecutar `DROP TABLE IF EXISTS charge_events` + `initSchema()` y ser accesible con el script `db:reset`; debe funcionar igual contra Turso que contra el archivo local.
+  - **Hecho cuando:** `pnpm db:reset` deja la tabla vacía sin borrar archivos ni requerir SQLite local.
+
+### T-024: Notificación Telegram en `plug`
+- [x] **T-024: Notificación Telegram en `plug`**
+  - **Duración:** < 15 min
+  - **Dependencias:** T-021
+  - **RF:**
+    - RF-055: `apps/collector/src/notify.ts` debe enviar un mensaje a `https://api.telegram.org/bot<token>/sendMessage` al detectar `plug`.
+    - RF-056: Debe ser *no-op* sin error si falta `TELEGRAM_BOT_TOKEN`/`TELEGRAM_CHAT_ID` o si `TELEGRAM_ENABLED` es `false`/`0`.
+  - **Hecho cuando:** un `plug` real envía "🔌 Volvió a cargar" y sin credenciales el collector sigue funcionando.
+
+### T-025: Notificación Telegram en `unplug` + refactor
+- [x] **T-025: Notificación Telegram en `unplug` + refactor**
+  - **Duración:** < 15 min
+  - **Dependencias:** T-024
+  - **RF:**
+    - RF-057: Debe notificarse también `unplug` ("🔋 Dejó de cargar") reutilizando un helper común con el mapa `MESSAGES`.
+    - RF-058: Un fallo HTTP de Telegram debe registrarse con `console.warn` sin interrumpir el collector.
+  - **Hecho cuando:** ambas transiciones notifican y un error de red no detiene el proceso.
+
+### T-026: pm2 para el collector en producción
+- [x] **T-026: pm2 para el collector en producción**
+  - **Duración:** < 15 min
+  - **Dependencias:** T-025
+  - **RF:**
+    - RF-059: Debe existir `ecosystem.config.cjs` en la raíz que ejecute el collector compilado, más los scripts `pm2:start|stop|restart|status|logs|save`.
+    - RF-060: Los logs deben escribirse en `data/logs/collector.out.log` y `data/logs/collector.err.log` (ignorados por git).
+  - **Hecho cuando:** `pnpm pm2:start` arranca el collector, `pnpm pm2:status` lo muestra online y `pnpm pm2:logs` muestra la salida.
+
+### T-027: Blueprint de Render para la web
+- [x] **T-027: Blueprint de Render para la web**
+  - **Duración:** < 20 min
+  - **Dependencias:** T-026
+  - **RF:**
+    - RF-061: `render.yaml` debe definir un *Web Service* con build `pnpm install --frozen-lockfile && pnpm build`, start `node apps/web/dist/server/entry.mjs` y health check `/api/events`.
+    - RF-062: Debe fijar `HOST=0.0.0.0`, `NODE_VERSION=22` y declarar `TURSO_DATABASE_URL`/`TURSO_AUTH_TOKEN` como secretos `sync: false`.
+  - **Hecho cuando:** el servicio arranca en Render, `/api/events` responde 200 y la web muestra los eventos de Turso generados por el collector local.
+
 ## Criterio global de cierre
 
-**Hecho cuando:** Todas las tareas T-001–T-020 tienen checkbox marcado, `pnpm typecheck` pasa, `pnpm dev:web` y `pnpm dev:collector` arrancan sin errores y el flujo plug/unplug genera transiciones únicas registradas en `charge_events`.
+**Hecho cuando:** Todas las tareas T-001–T-027 tienen checkbox marcado, `pnpm typecheck` pasa, `pnpm dev:web` y `pnpm dev:collector` arrancan sin errores, el flujo plug/unplug genera transiciones únicas registradas en `charge_events`, las notificaciones de Telegram se envían (o se omiten sin error si no hay credenciales) y la web desplegada en Render sirve los eventos de la misma base Turso.
