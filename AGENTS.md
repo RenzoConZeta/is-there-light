@@ -29,6 +29,7 @@ Almacena los eventos en **libSQL/Turso** (base remota en la nube), con un archiv
 │   ├── db/         # Cliente libSQL (@libsql/client), esquema, migraciones y helpers
 │   └── shared/     # Tipos compartidos entre web y collector
 ├── data/           # Archivo SQLite local de fallback (OBLIGATORIO ignorar en .gitignore)
+├── render.yaml     # Blueprint de Render (despliega la web; el collector sigue local)
 └── package.json    # Raíz con pnpm workspaces + scripts
 ```
 
@@ -85,7 +86,7 @@ Todos los comandos se ejecutan desde la raíz con `pnpm`.
 | `COLLECTOR_INTERVAL_MS` | `2000` | Intervalo (ms) para polling como fallback (macOS/Windows) |
 | `POWER_WATCH_DEBOUNCE_MS` | `100` | Debounce (ms) al usar `fs.watch()` (Linux) para evitar eventos duplicados |
 | `PORT` | `4321` | Puerto del servidor Astro |
-| `HOST` | `localhost` | Host del servidor Astro |
+| `HOST` | `localhost` | Host del servidor Astro (en Render debe ser `0.0.0.0`) |
 | `NODE_ENV` | `development` | `development` \| `production` |
 | `TELEGRAM_BOT_TOKEN` | — | Token del bot de Telegram (obtenido con [@BotFather](https://t.me/BotFather)). Requerido para enviar notificaciones |
 | `TELEGRAM_CHAT_ID` | — | ID del chat/usuario/grupo de Telegram donde enviar notificaciones (p.ej. [@userinfobot](https://t.me/userinfobot)). Requerido para enviar notificaciones |
@@ -164,6 +165,35 @@ En producción local (o para dejarlo corriendo entre reinicios) se usa **pm2** d
 Los logs se guardan en `data/logs/collector.out.log` y `data/logs/collector.err.log`. Tras `pnpm pm2:start`, recuerda ejecutar `pnpm pm2:save` para persistir entre reinicios. Para autorresurrect al iniciar sesión, puedes usar `pm2 startup` (macOS genera un LaunchAgent o las instrucciones necesarias) y confirmar con `pm2 save`.
 
 Con la estrategia híbrida el consumo es **despreciable**: ~0% CPU en reposo con `fs.watch()` y < 0.01% con polling cada 2s.
+
+## Despliegue en Render
+
+La **web** (Astro SSR) se despliega en Render como *Web Service*. El **collector NO se despliega** en Render: mide el estado de carga del equipo local, así que debe seguir corriendo en tu portátil (con `pnpm start:collector` o pm2) apuntando a la **misma base Turso**.
+
+El blueprint está en `render.yaml` y define:
+
+| Ajuste | Valor |
+|---|---|
+| Tipo | `web` (Node) |
+| Build | `pnpm install --frozen-lockfile && pnpm build` |
+| Start | `node apps/web/dist/server/entry.mjs` |
+| Health check | `/api/events` |
+| `HOST` | `0.0.0.0` (obligatorio para que el proxy de Render alcance el servicio) |
+| `PORT` | Lo inyecta Render; el servidor standalone lo respeta |
+| Secretos | `TURSO_DATABASE_URL` y `TURSO_AUTH_TOKEN` (`sync: false`) |
+
+**Pasos:**
+
+1. Sube el repo a GitHub/GitLab.
+2. En Render: **New +** → **Blueprint** → selecciona el repo.
+3. Define `TURSO_DATABASE_URL` y `TURSO_AUTH_TOKEN` cuando Render los pida.
+4. El collector sigue corriendo en local contra la misma base Turso.
+
+**Requisitos / notas:**
+
+- **Turso es obligatorio en producción.** El filesystem de Render es efímero: sin `TURSO_DATABASE_URL` se usa un SQLite local que se pierde en cada deploy/reinicio. `packages/db` avisa con un `warning` si `NODE_ENV=production` y no hay Turso.
+- Node **>= 22.12** (lo exige Astro 7). El blueprint fija `NODE_VERSION=22`.
+- El colector y la web comparten la base Turso, así que los eventos generados en local aparecen en la web desplegada.
 
 ## Convenciones
 

@@ -53,6 +53,13 @@ export function resolveClientConfig(): { url: string; authToken?: string } {
     return { url, authToken: process.env.TURSO_AUTH_TOKEN?.trim() };
   }
 
+  if (process.env.NODE_ENV === "production") {
+    console.warn(
+      "[db] TURSO_DATABASE_URL no está definida: se usa el SQLite local como fallback. " +
+        "En hosts con sistema de archivos efímero (Render, etc.) los datos NO persistirán."
+    );
+  }
+
   return { url: `file:${resolveDbPath()}` };
 }
 
