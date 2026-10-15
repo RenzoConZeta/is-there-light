@@ -1,4 +1,9 @@
-export async function notifyPlug(occurredAt: string): Promise<void> {
+const MESSAGES = {
+  plug: "🔌 Volvió a cargar",
+  unplug: "🔋 Dejó de cargar",
+} as const;
+
+async function notify(type: keyof typeof MESSAGES, occurredAt: string): Promise<void> {
   const token = process.env.TELEGRAM_BOT_TOKEN;
   const chatId = process.env.TELEGRAM_CHAT_ID;
   const enabled = process.env.TELEGRAM_ENABLED;
@@ -14,7 +19,7 @@ export async function notifyPlug(occurredAt: string): Promise<void> {
   try {
     const url = `https://api.telegram.org/bot${token}/sendMessage`;
     const occurred = new Date(occurredAt);
-    const text = `🔌 Volvió a cargar\n${occurred.toLocaleString()}`;
+    const text = `${MESSAGES[type]}\n${occurred.toLocaleString()}`;
 
     const res = await fetch(url, {
       method: "POST",
@@ -32,8 +37,16 @@ export async function notifyPlug(occurredAt: string): Promise<void> {
       return;
     }
 
-    console.log("[telegram] plug notification sent");
+    console.log(`[telegram] ${type} notification sent`);
   } catch (err) {
-    console.warn("[telegram] failed to send plug notification:", err);
+    console.warn(`[telegram] failed to send ${type} notification:`, err);
   }
+}
+
+export function notifyPlug(occurredAt: string): Promise<void> {
+  return notify("plug", occurredAt);
+}
+
+export function notifyUnplug(occurredAt: string): Promise<void> {
+  return notify("unplug", occurredAt);
 }

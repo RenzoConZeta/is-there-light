@@ -2,7 +2,7 @@ import { existsSync, mkdirSync } from "fs";
 import { dirname, join } from "path";
 import { fileURLToPath } from "url";
 import { closeDb, initSchema, insertChargeEvent, resolveDbPath } from "@app/db";
-import { notifyPlug } from "./notify.js";
+import { notifyPlug, notifyUnplug } from "./notify.js";
 import { detectPlatform, getStrategy, type Platform, type PowerStrategy } from "./platform.js";
 import { getWasPlugged, onPowerChange } from "./state.js";
 import { resolveIntervalMs, startPolling } from "./powerPoller.js";
@@ -57,12 +57,11 @@ async function handleReading(plugged: boolean): Promise<void> {
         source: SOURCE,
       });
 
-      if (transition === "plug") {
-        // Notificación no bloqueante y tolerante a fallos
-        void notifyPlug(occurred_at).catch((err) => {
-          logWarn("unexpected error in notifyPlug", err);
-        });
-      }
+      const notify = transition === "plug" ? notifyPlug : notifyUnplug;
+      // Notificación no bloqueante y tolerante a fallos
+      void notify(occurred_at).catch((err) => {
+        logWarn(`unexpected error in notify${transition === "plug" ? "Plug" : "Unplug"}`, err);
+      });
 
       logInfo(`Transición ${transition} registrada (plugged=${plugged})`);
     } else if (!alreadySynchronized) {
