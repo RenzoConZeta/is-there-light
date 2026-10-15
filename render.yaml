@@ -16,7 +16,7 @@
 # Docs: https://render.com/docs/blueprint-spec
 services:
   - type: web
-    name: is-there-electricity
+    name: is-there-light
     runtime: node
     plan: free
     branch: main
