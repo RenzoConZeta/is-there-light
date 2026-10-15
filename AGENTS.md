@@ -8,13 +8,13 @@ MVP local para registrar cambios de estado de carga de la laptop:
 - Guarda la fecha y hora en que vuelve a cargar (`plug`).
 - Expone una web con [Astro](https://astro.build/) para consultar el historial de esos eventos.
 
-Todo corre 100% localmente. El `collector` y la `web` son procesos independientes que comparten la misma base de datos SQLite.
+Almacena los eventos en **libSQL/Turso** (base remota en la nube), con un archivo SQLite local como fallback de desarrollo. El `collector` y la `web` son procesos independientes que comparten la misma base de datos.
 
 ## Stack
 
 - **Runtime:** Node.js + TypeScript
 - **Gestor de paquetes:** pnpm (con workspaces)
-- **Base de datos:** SQLite con [`better-sqlite3`](https://github.com/WiseLibs/better-sqlite3)
+- **Base de datos:** [libSQL](https://github.com/tursodatabase/libsql) / [Turso](https://turso.tech/) con [`@libsql/client`](https://github.com/tursodatabase/libsql-client-ts). Fallback a archivo SQLite local (`file:`) cuando no hay Turso configurado.
 - **Web:** [Astro](https://astro.build/) (con posibilidad de usar SSR para exponer las rutas API)
 - **Colector:** Proceso Node independiente, sin servidor HTTP
 
@@ -26,9 +26,9 @@ Todo corre 100% localmente. El `collector` y la `web` son procesos independiente
 │   ├── web/        # App Astro (páginas + rutas API para consultar eventos)
 │   └── collector/  # Proceso en segundo plano que detecta plug/unplug
 ├── packages/
-│   ├── db/         # Cliente SQLite, esquema, migraciones, helpers y modo WAL
+│   ├── db/         # Cliente libSQL (@libsql/client), esquema, migraciones y helpers
 │   └── shared/     # Tipos compartidos entre web y collector
-├── data/           # Archivo SQLite local (OBLIGATORIO ignorar en .gitignore)
+├── data/           # Archivo SQLite local de fallback (OBLIGATORIO ignorar en .gitignore)
 └── package.json    # Raíz con pnpm workspaces + scripts
 ```
 
@@ -44,7 +44,7 @@ Tabla `charge_events`:
 | `source` | TEXT | `collector` por defecto |
 | `created_at` | TEXT | `datetime('now')` por defecto |
 
-**Recomendado:** Al inicializar la DB usar `PRAGMA journal_mode = WAL;` para permitir lecturas concurrentes entre `web` y `collector` sin bloqueos.
+**Notas:** Con Turso la concurrencia la gestiona el servidor, así que ya **no se usa** `PRAGMA journal_mode = WAL` (era relevante con `better-sqlite3` local). El esquema se crea de forma idempotente con `initSchema()`.
 
 ## Comandos
 
@@ -64,8 +64,8 @@ Todos los comandos se ejecutan desde la raíz con `pnpm`.
 | `pnpm typecheck` | Ejecuta `tsc --noEmit` en todos los workspaces |
 | `pnpm lint` | Lint (definir al configurar eslint) |
 | `pnpm test` | Tests (definir al configurar vitest/jest) |
-| `pnpm db:migrate` | Ejecuta migraciones locales |
-| `pnpm db:reset` | Borra `data/charge.db` para desarrollo (usar con cuidado) |
+| `pnpm db:migrate` | Crea el esquema en la base configurada (Turso o archivo local) |
+| `pnpm db:reset` | Vacía `charge_events` (DROP + CREATE) en la base configurada (usar con cuidado) |
 
 > `lint` y `test` pueden dejarse sin implementación inicial, pero deben registrarse con su comando exacto en este archivo en cuanto se añadan.
 
@@ -73,7 +73,9 @@ Todos los comandos se ejecutan desde la raíz con `pnpm`.
 
 | Variable | Valor por defecto | Descripción |
 |---|---|---|
-| `DB_PATH` | `./data/charge.db` | Ruta al archivo SQLite (las rutas relativas se anclan a la raíz del repo, no al cwd) |
+| `TURSO_DATABASE_URL` | — | URL de la base Turso (`libsql://...`). Si está definida, tiene prioridad y se usa la base remota |
+| `TURSO_AUTH_TOKEN` | — | Token de autenticación de Turso (requerido si se define `TURSO_DATABASE_URL`) |
+| `DB_PATH` | `./data/charge.db` | Ruta al archivo SQLite local. **Solo fallback** cuando `TURSO_DATABASE_URL` está vacía (rutas relativas ancladas a la raíz del repo) |
 | `COLLECTOR_INTERVAL_MS` | `2000` | Intervalo (ms) para polling como fallback (macOS/Windows) |
 | `POWER_WATCH_DEBOUNCE_MS` | `100` | Debounce (ms) al usar `fs.watch()` (Linux) para evitar eventos duplicados |
 | `PORT` | `4321` | Puerto del servidor Astro |
@@ -154,7 +156,7 @@ Con la estrategia híbrida el consumo es **despreciable**: ~0% CPU en reposo con
 ## Entrypoints
 
 - `apps/web/src/pages/index.astro` – Vista principal con historial
-- `apps/web/src/pages/api/events.ts` (o `events/index.ts`) – API para leer eventos desde SQLite
+- `apps/web/src/pages/api/events.ts` (o `events/index.ts`) – API para leer eventos desde la base libSQL
 - `apps/collector/src/index.ts` – Entrada del collector
 - `packages/db/src/index.ts` – Cliente + `getChargeEvents`, `insertChargeEvent`, `initSchema`, `migrate`
 - `packages/shared/src/types.ts` – `ChargeEvent`, `ChargeEventType`, tipos compartidos

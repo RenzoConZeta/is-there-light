@@ -1,31 +1,25 @@
-import { mkdirSync } from "node:fs";
-import { dirname } from "node:path";
-import {
-  getChargeEvents,
-  initSchema,
-  resolveDbPath,
-  type GetChargeEventsParams,
-} from "@app/db";
+import { getChargeEvents, initSchema, type GetChargeEventsParams } from "@app/db";
 import type { ChargeEvent } from "@app/shared";
 
-let initialized = false;
+let initialized: Promise<void> | null = null;
 
-/** Inicializa la conexión y el esquema una única vez por proceso. */
-function ensureDb(): void {
-  if (initialized) {
-    return;
+/** Inicializa el esquema una única vez por proceso (idempotente). */
+function ensureDb(): Promise<void> {
+  if (!initialized) {
+    initialized = initSchema().catch((error: unknown) => {
+      // Permite reintentar en la próxima petición si la inicialización falla.
+      initialized = null;
+      throw error;
+    });
   }
 
-  const dbPath = resolveDbPath();
-  mkdirSync(dirname(dbPath), { recursive: true });
-  process.env.DB_PATH = dbPath;
-
-  initSchema();
-  initialized = true;
+  return initialized;
 }
 
 /** Lee el historial de eventos, más recientes primero. */
-export function listChargeEvents(params: GetChargeEventsParams = {}): ChargeEvent[] {
-  ensureDb();
+export async function listChargeEvents(
+  params: GetChargeEventsParams = {}
+): Promise<ChargeEvent[]> {
+  await ensureDb();
   return getChargeEvents(params);
 }

@@ -3,7 +3,7 @@ import { listChargeEvents } from "../lib/events.js";
 
 export const prerender = false;
 
-const events = listChargeEvents({ limit: 200 });
+const events = await listChargeEvents({ limit: 200 });
 
 const dateTimeFormatter = new Intl.DateTimeFormat("es-ES", {
   dateStyle: "medium",

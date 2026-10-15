@@ -17,10 +17,9 @@ export default defineConfig({
   },
   vite: {
     ssr: {
-      // `better-sqlite3` es un módulo nativo CommonJS: si se bundlea rompe
-      // (`__filename` no existe en ESM). Los paquetes del workspace se
-      // resuelven en runtime desde `node_modules` para reusar su `dist`.
-      external: ["@app/db", "@app/shared", "better-sqlite3"],
+      // Los paquetes del workspace y `@libsql/client` se resuelven en runtime
+      // desde `node_modules` para reusar su `dist` (libSQL usa bindings nativos).
+      external: ["@app/db", "@app/shared", "@libsql/client"],
     },
   },
 });

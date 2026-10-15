@@ -43,19 +43,18 @@ function loadEnvFiles(): void {
 }
 
 /** Registra la lectura: sólo persiste cambios reales de estado. */
-function handleReading(plugged: boolean): void {
+async function handleReading(plugged: boolean): Promise<void> {
   const alreadySynchronized = getWasPlugged() !== null;
+  const transition = onPowerChange(plugged);
 
   try {
-    const transition = onPowerChange(plugged, (type) => {
-      insertChargeEvent({
-        type,
+    if (transition) {
+      await insertChargeEvent({
+        type: transition,
         occurred_at: new Date().toISOString(),
         source: SOURCE,
       });
-    });
 
-    if (transition) {
       logInfo(`Transición ${transition} registrada (plugged=${plugged})`);
     } else if (!alreadySynchronized) {
       logInfo(`Estado inicial sincronizado: plugged=${plugged} (sin evento)`);
@@ -80,7 +79,7 @@ function startCollecting(strategy: PowerStrategy): CollectorHandle {
   return startPolling(handleReading, { onError });
 }
 
-function main(): void {
+async function main(): Promise<void> {
   loadEnvFiles();
 
   let platform: Platform;
@@ -99,16 +98,18 @@ function main(): void {
   mkdirSync(dirname(dbPath), { recursive: true });
   process.env.DB_PATH = dbPath;
 
+  const tursoUrl = process.env.TURSO_DATABASE_URL?.trim();
+
   try {
-    // Crea la tabla si falta y activa WAL (ver packages/db).
-    initSchema();
+    // Crea la tabla si falta (idempotente).
+    await initSchema();
   } catch (error) {
-    logWarn(`No se pudo inicializar la base de datos en ${dbPath}`, error);
+    logWarn(`No se pudo inicializar la base de datos (${dbPath})`, error);
     process.exitCode = 1;
     return;
   }
 
-  logInfo(`DB lista en ${dbPath}`);
+  logInfo(tursoUrl ? `DB remota (Turso) lista` : `DB local lista en ${dbPath}`);
   logInfo(`Plataforma ${platform} ⇒ estrategia ${strategy}`);
   logInfo(
     `Config: COLLECTOR_INTERVAL_MS=${resolveIntervalMs()} ms, POWER_WATCH_DEBOUNCE_MS=${resolveDebounceMs()} ms`
@@ -127,4 +128,7 @@ function main(): void {
   process.on("SIGTERM", () => shutdown("SIGTERM"));
 }
 
-main();
+main().catch((error: unknown) => {
+  logWarn("Error fatal del collector", error);
+  process.exitCode = 1;
+});

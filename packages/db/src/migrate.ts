@@ -1,9 +1,12 @@
 import { initSchema } from "./db.js";
 
-export function migrate(dbPath?: string): void {
-  initSchema(dbPath);
+export async function migrate(): Promise<void> {
+  await initSchema();
 }
 
 if (import.meta.url === `file://${process.argv[1]}`) {
-  migrate();
+  migrate().catch((error: unknown) => {
+    console.error("[db] Falló la migración", error);
+    process.exitCode = 1;
+  });
 }

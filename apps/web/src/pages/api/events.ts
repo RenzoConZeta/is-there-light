@@ -20,12 +20,12 @@ function parseBoundedInt(value: string | null, fallback: number, min: number, ma
   return Math.min(parsed, max);
 }
 
-export const GET: APIRoute = ({ url }) => {
+export const GET: APIRoute = async ({ url }) => {
   const limit = parseBoundedInt(url.searchParams.get("limit"), DEFAULT_LIMIT, 1, MAX_LIMIT);
   const offset = parseBoundedInt(url.searchParams.get("offset"), 0, 0, Number.MAX_SAFE_INTEGER);
 
   try {
-    const events = listChargeEvents({ limit, offset });
+    const events = await listChargeEvents({ limit, offset });
     return Response.json({ events });
   } catch (error) {
     console.error("[web] No se pudieron leer los eventos", error);

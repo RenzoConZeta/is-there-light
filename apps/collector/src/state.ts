@@ -20,14 +20,17 @@ export function resetState(): void {
 
 /**
  * Registra una lectura del estado de energía y, sólo cuando representa un
- * cambio real respecto de la anterior, invoca `onTransition` con el tipo de
- * evento. La primera lectura únicamente sincroniza el estado (sin evento).
+ * cambio real respecto de la anterior, devuelve el tipo de evento. La primera
+ * lectura únicamente sincroniza el estado (sin evento).
+ *
+ * `onTransition` es opcional: quien necesite reaccionar de forma imperativa
+ * puede pasarlo, pero el valor de retorno ya informa la transición detectada.
  *
  * Devuelve la transición detectada o `null` si no hubo cambio.
  */
 export function onPowerChange(
   plugged: boolean,
-  onTransition: (type: ChargeEventType) => void
+  onTransition?: (type: ChargeEventType) => void
 ): ChargeEventType | null {
   if (wasPlugged === null) {
     // Sincroniza el estado inicial. NO insertar evento.
@@ -40,10 +43,10 @@ export function onPowerChange(
   }
 
   const type: ChargeEventType = plugged ? "plug" : "unplug";
-  // Se actualiza antes de notificar: si el callback falla, la próxima lectura
-  // no debe volver a intentar la misma transición como si fuese nueva.
+  // Se actualiza antes de notificar: si la persistencia falla, la próxima
+  // lectura no debe volver a intentar la misma transición como si fuese nueva.
   wasPlugged = plugged;
-  onTransition(type);
+  onTransition?.(type);
 
   return type;
 }
