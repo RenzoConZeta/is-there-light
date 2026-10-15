@@ -81,6 +81,9 @@ Todos los comandos se ejecutan desde la raíz con `pnpm`.
 | `PORT` | `4321` | Puerto del servidor Astro |
 | `HOST` | `localhost` | Host del servidor Astro |
 | `NODE_ENV` | `development` | `development` \| `production` |
+| `TELEGRAM_BOT_TOKEN` | — | Token del bot de Telegram (obtenido con [@BotFather](https://t.me/BotFather)). Requerido para enviar notificaciones |
+| `TELEGRAM_CHAT_ID` | — | ID del chat/usuario/grupo de Telegram donde enviar notificaciones (p.ej. [@userinfobot](https://t.me/userinfobot)). Requerido para enviar notificaciones |
+| `TELEGRAM_ENABLED` | `true` | `true`/`false` para activar/desactivar notificaciones sin borrar credenciales |
 
 ## Collector
 
