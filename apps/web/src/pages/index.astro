@@ -24,8 +24,17 @@ function labelFor(type: string): string {
 <html lang="es">
   <head>
     <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
     <title>Historial de energía</title>
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <meta name="theme-color" content="#0f1115" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="Electricidad" />
+    <link rel="icon" href="/icons/icon.svg" type="image/svg+xml" />
+    <link rel="icon" type="image/png" sizes="192x192" href="/icons/icon-192.png" />
+    <link rel="apple-touch-icon" sizes="180x180" href="/icons/apple-touch-icon-180.png" />
     <style>
       :root {
         color-scheme: light dark;
@@ -119,12 +128,70 @@ function labelFor(type: string): string {
         color: var(--muted);
         font-size: 0.8rem;
       }
+
+      .push-controls {
+        margin: 1rem 0 1.5rem;
+        padding: 0.75rem 1rem;
+        border: 1px solid var(--border);
+        border-radius: 10px;
+        background: var(--panel);
+        display: flex;
+        flex-direction: column;
+        gap: 0.5rem;
+      }
+
+      .push-row {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 1rem;
+      }
+
+      .push-status {
+        color: var(--muted);
+        font-size: 0.9rem;
+      }
+
+      button {
+        padding: 0.5rem 1rem;
+        border-radius: 8px;
+        border: 1px solid var(--border);
+        background: transparent;
+        color: var(--text);
+        cursor: pointer;
+        transition: background 0.2s;
+      }
+
+      button:hover {
+        background: rgba(255,255,255,0.05);
+      }
+
+      button:disabled {
+        opacity: 0.5;
+        cursor: not-allowed;
+      }
     </style>
   </head>
   <body>
     <main>
       <h1>Historial de energía</h1>
       <p class="subtitle">Cambios de estado de carga registrados por el collector.</p>
+
+      <section class="push-controls" id="push-controls" hidden>
+        <div class="push-row">
+          <span class="push-status" id="push-status">Notificaciones push</span>
+          <button id="push-toggle">Activar</button>
+        </div>
+        <small class="push-status">Recibe avisos al conectarse/desconectarse.</small>
+      </section>
+
+      <section class="push-controls" id="install-controls" hidden>
+        <div class="push-row">
+          <span class="push-status">Instalar la app</span>
+          <button id="install-button">Instalar</button>
+        </div>
+        <small class="push-status">Añádela a tu dispositivo para uso sin conexión y notificaciones.</small>
+      </section>
 
       {
         events.length === 0 ? (
@@ -142,5 +209,194 @@ function labelFor(type: string): string {
         )
       }
     </main>
+
+    <script>
+      (function () {
+        // El service worker (caché + push) solo se usa en producción: en `astro dev`
+        // interferiría con el HMR y el servidor de módulos de Vite.
+        const IS_PROD = import.meta.env.PROD;
+
+        const controls = document.getElementById('push-controls');
+        const statusEl = document.getElementById('push-status');
+        const toggle = document.getElementById('push-toggle');
+        const installControls = document.getElementById('install-controls');
+        const installButton = document.getElementById('install-button');
+
+        let isSubscribed = false;
+        let registration = null;
+        let deferredPrompt = null;
+
+        function urlBase64ToUint8Array(base64String) {
+          const padding = '='.repeat((4 - (base64String.length % 4)) % 4);
+          const base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/');
+          const rawData = atob(base64);
+          const outputArray = new Uint8Array(rawData.length);
+          for (let i = 0; i < rawData.length; ++i) {
+            outputArray[i] = rawData.charCodeAt(i);
+          }
+          return outputArray;
+        }
+
+        function setupInstall() {
+          if (!installControls || !installButton) return;
+
+          window.addEventListener('beforeinstallprompt', (event) => {
+            event.preventDefault();
+            deferredPrompt = event;
+            installControls.hidden = false;
+          });
+
+          window.addEventListener('appinstalled', () => {
+            deferredPrompt = null;
+            installControls.hidden = true;
+          });
+
+          installButton.addEventListener('click', async () => {
+            if (!deferredPrompt) return;
+            installButton.disabled = true;
+            try {
+              deferredPrompt.prompt();
+              await deferredPrompt.userChoice;
+            } catch (e) {
+              console.warn('Install prompt failed', e);
+            } finally {
+              deferredPrompt = null;
+              installControls.hidden = true;
+              installButton.disabled = false;
+            }
+          });
+        }
+
+        async function registerServiceWorker() {
+          try {
+            registration = await navigator.serviceWorker.register('/sw.js', { scope: '/' });
+            await navigator.serviceWorker.ready;
+          } catch (e) {
+            console.warn('SW registration failed', e);
+            return false;
+          }
+          return true;
+        }
+
+        function watchForUpdates() {
+          // Si una versión nueva del SW toma el control, recarga una vez.
+          if (!navigator.serviceWorker.controller) return;
+          let reloading = false;
+          navigator.serviceWorker.addEventListener('controllerchange', () => {
+            if (reloading) return;
+            reloading = true;
+            location.reload();
+          });
+        }
+
+        async function init() {
+          if (!IS_PROD) {
+            console.info('[pwa] Service worker deshabilitado en desarrollo');
+            return;
+          }
+
+          if (!('serviceWorker' in navigator) || !('PushManager' in window)) {
+            return;
+          }
+
+          if (!controls || !statusEl || !toggle) {
+            return;
+          }
+
+          const registered = await registerServiceWorker();
+          if (!registered) return;
+
+          watchForUpdates();
+
+          try {
+            const sub = await registration.pushManager.getSubscription();
+            isSubscribed = !!sub;
+          } catch (e) {
+            isSubscribed = false;
+          }
+
+          controls.hidden = false;
+          updateUI();
+
+          toggle.addEventListener('click', onToggle);
+        }
+
+        function updateUI() {
+          if (isSubscribed) {
+            statusEl.textContent = 'Notificaciones activadas';
+            toggle.textContent = 'Desactivar';
+          } else {
+            statusEl.textContent = 'Notificaciones desactivadas';
+            toggle.textContent = 'Activar';
+          }
+        }
+
+        async function getPublicKey() {
+          const res = await fetch('/api/vapid-public-key');
+          if (!res.ok) throw new Error('No se pudo obtener VAPID key');
+          const data = await res.json();
+          return data.publicKey;
+        }
+
+        async function subscribe() {
+          try {
+            const publicKey = await getPublicKey();
+            const sub = await registration.pushManager.subscribe({
+              userVisibleOnly: true,
+              applicationServerKey: urlBase64ToUint8Array(publicKey),
+            });
+            await fetch('/api/push/subscribe', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(sub),
+            });
+            isSubscribed = true;
+          } catch (e) {
+            console.error('Subscription failed', e);
+          }
+        }
+
+        async function unsubscribe() {
+          try {
+            const sub = await registration?.pushManager.getSubscription();
+            if (sub) {
+              await sub.unsubscribe();
+              await fetch('/api/push/unsubscribe', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ endpoint: sub.endpoint }),
+              });
+            }
+            isSubscribed = false;
+          } catch (e) {
+            console.error('Unsubscribe failed', e);
+          }
+        }
+
+        async function onToggle() {
+          toggle.disabled = true;
+          try {
+            if (isSubscribed) {
+              await unsubscribe();
+            } else {
+              await subscribe();
+            }
+          } finally {
+            updateUI();
+            toggle.disabled = false;
+          }
+        }
+
+        // Capturamos el evento de instalación lo antes posible (puede dispararse
+        // antes de `load`), aunque el SW se registre más tarde.
+        setupInstall();
+
+        if ('serviceWorker' in navigator) {
+          window.addEventListener('load', init);
+        } else {
+          init();
+        }
+      })();
+    </script>
   </body>
 </html>

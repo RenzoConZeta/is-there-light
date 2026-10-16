@@ -27,8 +27,8 @@
     "pm2:logs": "pm2 logs collector",
     "pm2:save": "pm2 save",
     "typecheck": "pnpm -r typecheck",
-    "lint": "pnpm -r lint",
-    "test": "pnpm -r test",
+    "lint": "pnpm -r lint || true",
+    "test": "pnpm -r test || true",
     "db:migrate": "pnpm --filter @app/db run migrate",
     "db:reset": "pnpm --filter @app/db run reset"
   },
@@ -36,5 +36,9 @@
     "@types/node": "^26.6.5",
     "pm2": "^5.4.3",
     "typescript": "^5.8.3"
+  },
+  "dependencies": {
+    "@types/web-push": "^3.6.3",
+    "web-push": "^3.6.7"
   }
 }

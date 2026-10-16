@@ -1,45 +1,40 @@
-# Blueprint de Render para "is-there-electricity".
-#
-# Despliega SOLO la web (Astro SSR con adapter Node standalone), que lee el
-# historial desde Turso (libSQL remoto).
-#
-# El collector NO se despliega aquí: mide el estado de carga (batería) del
-# equipo donde corre, así que en un servidor cloud no tiene sentido. Debe
-# seguir ejecutándose en tu portátil con `pnpm start:collector` o con pm2,
-# apuntando a la misma base Turso.
-#
-# Uso:
-#   1. Sube el repo a GitHub/GitLab.
-#   2. En Render: "New +" → "Blueprint" → selecciona el repo.
-#   3. Cuando lo pida, define los secretos TURSO_DATABASE_URL y TURSO_AUTH_TOKEN.
-#
-# Docs: https://render.com/docs/blueprint-spec
 services:
   - type: web
     name: is-there-light
     runtime: node
     plan: free
-    branch: main
-    autoDeployTrigger: commit
-    # `pnpm -r build` respeta el orden topológico: shared → db → collector/web.
     buildCommand: pnpm install --frozen-lockfile && pnpm build
-    # El servidor standalone lee PORT/HOST del entorno en tiempo de ejecución.
     startCommand: node apps/web/dist/server/entry.mjs
     healthCheckPath: /api/events
     envVars:
-      # Astro 7 exige Node >= 22.12 (Render resuelve a la última 22.x).
       - key: NODE_VERSION
-        value: "22"
+        value: 22
       - key: NODE_ENV
         value: production
-      # Render inyecta PORT automáticamente. Hay que escuchar en 0.0.0.0 para
-      # que el proxy de Render alcance el servicio (localhost no sirve).
       - key: HOST
-        value: "0.0.0.0"
-      # Base remota Turso. Sin esto, Render usaría un SQLite efímero y los datos
-      # se perderían en cada deploy/reinicio. Render pedirá el valor al crear el
-      # Blueprint (`sync: false`) y no lo guarda en este archivo.
+        value: 0.0.0.0
+      - key: PORT
+        sync: false
       - key: TURSO_DATABASE_URL
         sync: false
       - key: TURSO_AUTH_TOKEN
         sync: false
+      - key: VAPID_PUBLIC_KEY
+        sync: false
+      - key: VAPID_PRIVATE_KEY
+        sync: false
+      - key: VAPID_SUBJECT
+        value: mailto:admin@local
+      - key: TELEGRAM_ENABLED
+        value: "false"
+      - key: TELEGRAM_BOT_TOKEN
+        sync: false
+      - key: TELEGRAM_CHAT_ID
+        sync: false
+      - key: DB_PATH
+        value: ./data/charge.db
+        sync: false
+    disk:
+      name: data
+      mountPath: /opt/render/project/src/data
+      sizeGB: 1

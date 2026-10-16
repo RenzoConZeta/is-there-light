@@ -91,6 +91,9 @@ Todos los comandos se ejecutan desde la raíz con `pnpm`.
 | `TELEGRAM_BOT_TOKEN` | — | Token del bot de Telegram (obtenido con [@BotFather](https://t.me/BotFather)). Requerido para enviar notificaciones |
 | `TELEGRAM_CHAT_ID` | — | ID del chat/usuario/grupo de Telegram donde enviar notificaciones (p.ej. [@userinfobot](https://t.me/userinfobot)). Requerido para enviar notificaciones |
 | `TELEGRAM_ENABLED` | `true` | `true`/`false` para activar/desactivar notificaciones sin borrar credenciales |
+| `VAPID_PUBLIC_KEY` | — | Clave pública VAPID para Web Push (generar con `npx web-push generate-vapid-keys`). Requerida para notificaciones push; la web la expone en `/api/vapid-public-key` |
+| `VAPID_PRIVATE_KEY` | — | Clave privada VAPID. Solo la usa el `collector` para firmar los envíos |
+| `VAPID_SUBJECT` | `mailto:admin@local` | Contacto (`mailto:` o URL) exigido por el protocolo Web Push |
 
 ## Collector
 
@@ -194,6 +197,49 @@ El blueprint está en `render.yaml` y define:
 - **Turso es obligatorio en producción.** El filesystem de Render es efímero: sin `TURSO_DATABASE_URL` se usa un SQLite local que se pierde en cada deploy/reinicio. `packages/db` avisa con un `warning` si `NODE_ENV=production` y no hay Turso.
 - Node **>= 22.12** (lo exige Astro 7). El blueprint fija `NODE_VERSION=22`.
 - El colector y la web comparten la base Turso, así que los eventos generados en local aparecen en la web desplegada.
+
+## PWA y notificaciones
+
+La web es una **PWA instalable** con soporte de **notificaciones push** (Web Push) y fallback offline.
+
+### Piezas
+
+| Archivo | Rol |
+|---|---|
+| `apps/web/public/manifest.webmanifest` | Manifest: nombre, `scope: /`, `display: standalone`, iconos PNG (`any` + `maskable`) y SVG |
+| `apps/web/public/sw.js` | Service worker: precache de estáticos, estrategia de fetch y handlers de `push`/`notificationclick` |
+| `apps/web/public/offline.html` | Página de fallback cuando no hay red en una navegación |
+| `apps/web/public/icons/` | Iconos PNG generados desde los SVG (`icon-*.png`, `apple-touch-icon-180.png`, `badge-72.png`) |
+| `apps/web/src/pages/index.astro` | Registra el SW, toggle de push y botón "Instalar" (`beforeinstallprompt`) |
+| `apps/web/src/pages/api/push/*` | Alta/baja de suscripciones y `vapid-public-key` |
+| `apps/collector/src/push.ts` | Envía el push con `web-push` al detectar `plug`/`unplug` |
+
+### Estrategia del service worker
+
+- **Navegación:** network-first con fallback a caché y, si no hay, a `/offline.html`.
+- **Assets estáticos:** stale-while-revalidate.
+- **`/api/*`:** nunca se cachea (siempre red). El HTML es SSR y no se precachea.
+
+### Regenerar los iconos
+
+Los PNG se generan desde los SVG con `rsvg-convert` (Homebrew: `librsvg`):
+
+```bash
+cd apps/web/public/icons
+rsvg-convert -w 192 -h 192 icon.svg -o icon-192.png
+rsvg-convert -w 512 -h 512 icon.svg -o icon-512.png
+rsvg-convert -w 192 -h 192 icon-maskable.svg -o icon-maskable-192.png
+rsvg-convert -w 512 -h 512 icon-maskable.svg -o icon-maskable-512.png
+rsvg-convert -w 180 -h 180 apple-touch-icon.svg -o apple-touch-icon-180.png
+rsvg-convert -w 72 -h 72 badge.svg -o badge-72.png
+```
+
+### Notas
+
+- **Requiere HTTPS o `localhost`.** Push y service worker no funcionan sobre HTTP/IP de LAN.
+- **El SW solo se registra en producción** (`import.meta.env.PROD`); en `astro dev` está deshabilitado por el HMR. Para probarlo: `pnpm build` + `pnpm preview`.
+- **iOS (16.4+):** el push solo funciona con la PWA **instalada** en la pantalla de inicio y el permiso se pide con un gesto del usuario (el botón "Activar").
+- **Requiere `VAPID_*`** configuradas (ver tabla de variables) tanto en la web como en el collector.
 
 ## Convenciones
 

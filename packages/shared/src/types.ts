@@ -7,3 +7,11 @@ export interface ChargeEvent {
   source: string;
   created_at: string;
 }
+
+export interface PushSubscription {
+  endpoint: string;
+  p256dh: string;
+  auth: string;
+  user_agent?: string | null;
+  created_at: string;
+}

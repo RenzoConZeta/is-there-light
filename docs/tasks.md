@@ -268,6 +268,62 @@
     - RF-062: Debe fijar `HOST=0.0.0.0`, `NODE_VERSION=22` y declarar `TURSO_DATABASE_URL`/`TURSO_AUTH_TOKEN` como secretos `sync: false`.
   - **Hecho cuando:** el servicio arranca en Render, `/api/events` responde 200 y la web muestra los eventos de Turso generados por el collector local.
 
+## Fase 8: PWA, offline y notificaciones web
+
+### T-028: Iconos PNG de instalación y badge de notificación
+- [x] **T-028: Iconos PNG de instalación y badge de notificación**
+  - **Duración:** < 15 min
+  - **Dependencias:** T-027
+  - **RF:**
+    - RF-063: Generar desde los SVG los PNG `icon-192.png`, `icon-512.png`, `icon-maskable-192.png`, `icon-maskable-512.png`, `apple-touch-icon-180.png` y `badge-72.png` (este último monocromo para las notificaciones).
+    - RF-064: `sw.js` debe usar iconos existentes (`/icons/icon-192.png` y `/icons/badge-72.png`).
+  - **Hecho cuando:** los `src` de iconos del manifest y del SW apuntan a archivos presentes en `apps/web/public/icons/`.
+
+### T-029: Manifest y metadatos de instalación completos
+- [x] **T-029: Manifest y metadatos de instalación completos**
+  - **Duración:** < 10 min
+  - **Dependencias:** T-028
+  - **RF:**
+    - RF-065: `manifest.webmanifest` debe incluir `scope`, `start_url`, `display`, `display_override`, `orientation`, `categories`, `lang` e iconos PNG `any` + `maskable` (más SVG como `sizes: any`).
+    - RF-066: `index.astro` debe declarar `mobile-web-app-capable`, `apple-mobile-web-app-capable`, `apple-mobile-web-app-status-bar-style`, `apple-mobile-web-app-title` y `apple-touch-icon` PNG (180×180).
+  - **Hecho cuando:** el manifest valida y la app cumple los criterios de instalación de Chrome/Android; iOS usa el icono PNG.
+
+### T-030: Estrategia del service worker por tipo de request
+- [x] **T-030: Estrategia del service worker por tipo de request**
+  - **Duración:** < 30 min
+  - **Dependencias:** T-029
+  - **RF:**
+    - RF-067: Ignorar peticiones no-GET y las rutas `/api/*` (nunca cachear datos ni mezclar orígenes).
+    - RF-068: Navegación → network-first con fallback a caché y a `/offline.html`; assets estáticos → stale-while-revalidate. No precachear el HTML SSR de `/`.
+    - RF-069: Corregir el `respondWith(undefined)` del handler previo y versionar `CACHE_NAME` para invalidar cachés antiguas.
+  - **Hecho cuando:** `/api/events` siempre va a red, la navegación offline cae en `/offline.html` y un nuevo deploy activa la nueva versión de caché.
+
+### T-031: Página offline de fallback
+- [x] **T-031: Página offline de fallback**
+  - **Duración:** < 10 min
+  - **Dependencias:** T-030
+  - **RF:**
+    - RF-070: `apps/web/public/offline.html` debe existir, ser estática (sin SSR) e incluirse en el precache del service worker.
+  - **Hecho cuando:** sin red, cualquier navegación muestra la página offline.
+
+### T-032: Registro del SW en producción y botón de instalación
+- [x] **T-032: Registro del SW en producción y botón de instalación**
+  - **Duración:** < 20 min
+  - **Dependencias:** T-031
+  - **RF:**
+    - RF-071: El service worker solo se registra en producción (`import.meta.env.PROD`); en `astro dev` queda deshabilitado para no interferir con el HMR.
+    - RF-072: Capturar `beforeinstallprompt`/`appinstalled` y mostrar/ocultar un botón "Instalar"; recargar una vez ante `controllerchange` cuando hay actualización.
+  - **Hecho cuando:** en dev no hay SW activo, en producción el navegador ofrece instalar y la app se actualiza sin recargar manualmente.
+
+### T-033: Documentar PWA y variables VAPID
+- [x] **T-033: Documentar PWA y variables VAPID**
+  - **Duración:** < 10 min
+  - **Dependencias:** T-032
+  - **RF:**
+    - RF-073: `AGENTS.md` debe documentar `VAPID_PUBLIC_KEY`/`VAPID_PRIVATE_KEY`/`VAPID_SUBJECT` y una sección PWA (piezas, estrategia del SW y regeneración de iconos).
+    - RF-074: `.env.example` debe listar las variables VAPID con instrucciones para generarlas (`npx web-push generate-vapid-keys`).
+  - **Hecho cuando:** la documentación refleja la configuración PWA/push real.
+
 ## Criterio global de cierre
 
-**Hecho cuando:** Todas las tareas T-001–T-027 tienen checkbox marcado, `pnpm typecheck` pasa, `pnpm dev:web` y `pnpm dev:collector` arrancan sin errores, el flujo plug/unplug genera transiciones únicas registradas en `charge_events`, las notificaciones de Telegram se envían (o se omiten sin error si no hay credenciales) y la web desplegada en Render sirve los eventos de la misma base Turso.
+**Hecho cuando:** Todas las tareas T-001–T-033 tienen checkbox marcado, `pnpm typecheck` pasa, `pnpm dev:web` y `pnpm dev:collector` arrancan sin errores, el flujo plug/unplug genera transiciones únicas registradas en `charge_events`, las notificaciones de Telegram y Web Push se envían (o se omiten sin error si no hay credenciales), la web es instalable (manifest + iconos PNG), funciona offline con fallback a `/offline.html` y sirve los eventos de la misma base Turso desplegada en Render.

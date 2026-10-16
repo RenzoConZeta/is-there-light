@@ -11,7 +11,8 @@
   },
   "dependencies": {
     "@app/db": "workspace:*",
-    "@app/shared": "workspace:*"
+    "@app/shared": "workspace:*",
+    "web-push": "^3.6.7"
   },
   "devDependencies": {
     "@types/node": "^26.6.5",
