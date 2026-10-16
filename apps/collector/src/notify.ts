@@ -5,13 +5,15 @@ const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN?.trim();
 const TELEGRAM_CHAT_ID = process.env.TELEGRAM_CHAT_ID?.trim();
 
 export async function notifyPlug(occurredAt: string): Promise<void> {
-  const message = `🔌 Conectado a corriente\n${occurredAt}`;
-  await Promise.allSettled([sendTelegram(message), sendPushNotification("Conectado a corriente", formatTime(occurredAt))]);
+  const time = formatTime(occurredAt);
+  const message = `🔌 Conectado a corriente\n${time}`;
+  await Promise.allSettled([sendTelegram(message), sendPushNotification("Conectado a corriente", time)]);
 }
 
 export async function notifyUnplug(occurredAt: string): Promise<void> {
-  const message = `🔋 Desconectado de corriente\n${occurredAt}`;
-  await Promise.allSettled([sendTelegram(message), sendPushNotification("Desconectado de corriente", formatTime(occurredAt))]);
+  const time = formatTime(occurredAt);
+  const message = `🔋 Desconectado de corriente\n${time}`;
+  await Promise.allSettled([sendTelegram(message), sendPushNotification("Desconectado de corriente", time)]);
 }
 
 async function sendTelegram(text: string): Promise<void> {
@@ -34,7 +36,9 @@ async function sendTelegram(text: string): Promise<void> {
 
 function formatTime(iso: string): string {
   try {
-    return new Date(iso).toLocaleString("es-ES");
+    const date = new Date(iso);
+    if (Number.isNaN(date.getTime())) return iso;
+    return date.toLocaleString("es-ES", { dateStyle: "medium", timeStyle: "medium" });
   } catch {
     return iso;
   }

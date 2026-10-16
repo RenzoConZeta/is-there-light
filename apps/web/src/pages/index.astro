@@ -5,16 +5,6 @@ export const prerender = false;
 
 const events = await listChargeEvents({ limit: 200 });
 
-const dateTimeFormatter = new Intl.DateTimeFormat("es-ES", {
-  dateStyle: "medium",
-  timeStyle: "medium",
-});
-
-function formatOccurredAt(iso: string): string {
-  const date = new Date(iso);
-  return Number.isNaN(date.getTime()) ? iso : dateTimeFormatter.format(date);
-}
-
 function labelFor(type: string): string {
   return type === "plug" ? "Conectado" : "Desconectado";
 }
@@ -201,7 +191,7 @@ function labelFor(type: string): string {
             {events.map((event) => (
               <li>
                 <span class={`badge ${event.type}`}>{labelFor(event.type)}</span>
-                <span class="occurred">{formatOccurredAt(event.occurred_at)}</span>
+                <time class="occurred" datetime={event.occurred_at}>{event.occurred_at}</time>
                 <span class="source">{event.source}</span>
               </li>
             ))}
@@ -215,6 +205,24 @@ function labelFor(type: string): string {
         // El service worker (caché + push) solo se usa en producción: en `astro dev`
         // interferiría con el HMR y el servidor de módulos de Vite.
         const IS_PROD = import.meta.env.PROD;
+
+        // Formatea las fechas en la zona horaria del navegador. El servidor renderiza
+        // el ISO en UTC como fallback (para el caso de no-JS); aquí se reemplaza por
+        // la hora local del visitante.
+        function formatTimes() {
+          const formatter = new Intl.DateTimeFormat('es-ES', {
+            dateStyle: 'medium',
+            timeStyle: 'medium',
+          });
+
+          document.querySelectorAll('time[datetime]').forEach((el) => {
+            const date = new Date(el.getAttribute('datetime'));
+            if (Number.isNaN(date.getTime())) return;
+            el.textContent = formatter.format(date);
+          });
+        }
+
+        formatTimes();
 
         const controls = document.getElementById('push-controls');
         const statusEl = document.getElementById('push-status');
