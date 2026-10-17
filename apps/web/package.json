@@ -13,8 +13,9 @@
   "dependencies": {
     "@app/db": "workspace:*",
     "@app/shared": "workspace:*",
-    "@astrojs/node": "^11.1.7",
-    "astro": "^7.3.8",
+    "@astrojs/node": "^9.4.3",
+    "@astrojs/vercel": "^8.2.9",
+    "astro": "^5.14.1",
     "web-push": "^3.6.7"
   }
 }

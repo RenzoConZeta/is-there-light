@@ -1,16 +1,18 @@
 import { defineConfig } from "astro/config";
 import node from "@astrojs/node";
+import vercel from "@astrojs/vercel";
 
 /**
  * La web necesita SSR para poder leer SQLite en la ruta `/api/events` y en la
  * página principal, así que se compila como servidor Node standalone.
+ * Para desplegar en Vercel se usa su adapter (serverless).
  */
 const host = process.env.HOST ?? "localhost";
 const port = Number(process.env.PORT ?? 4321);
 
 export default defineConfig({
   output: "server",
-  adapter: node({ mode: "standalone" }),
+  adapter: process.env.VERCEL ? vercel() : node({ mode: "standalone" }),
   server: {
     host,
     port: Number.isFinite(port) ? port : 4321,
