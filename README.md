@@ -113,6 +113,29 @@ Todos se ejecutan desde la raíz con `pnpm`.
 
 `limit` está acotado a `1..1000` (por defecto `100`).
 
+`DELETE /api/events` — borra eventos. Acepta **exactamente uno** de los dos modos:
+
+```jsonc
+// Por id (uno o varios)
+{ "ids": [42, 43] }
+
+// Por fecha: borra todo lo anterior al límite (ISO 8601)
+{ "before": "2026-01-01T00:00:00.000Z" }
+```
+
+Respuestas: `200` `{ "deleted": 2, "requested": 2 }` (o `{ "deleted": 2 }` en el modo fecha), `404` si ningún id coincide, `400` si el cuerpo es inválido y `500` si falla la base de datos.
+
+> El endpoint **no tiene autenticación**: quien conozca la URL puede borrar registros. Para vaciar la tabla entera está `pnpm db:reset`.
+
+## Borrar registros
+
+Desde la web (`/`):
+
+- Marca eventos con su **checkbox** y pulsa **"Eliminar seleccionados (N)"**.
+- O bien elige una fecha y pulsa **"Eliminar anteriores al \<fecha\>"** para limpiar el historial antiguo. La fecha se interpreta en tu **hora local**, la misma que muestra la web.
+
+Cada borrado pide confirmación y no se puede deshacer.
+
 ## Modelo de datos
 
 Tabla `charge_events`:

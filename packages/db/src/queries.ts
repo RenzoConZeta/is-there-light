@@ -24,6 +24,20 @@ export interface DeletePushSubscriptionParams {
   endpoint: string;
 }
 
+export interface DeleteChargeEventParams {
+  id: number;
+}
+
+export interface DeleteChargeEventsParams {
+  /** Ids de los eventos a eliminar. */
+  ids: number[];
+}
+
+export interface DeleteChargeEventsBeforeParams {
+  /** Fecha límite (ISO 8601). Se borran los eventos anteriores a ella. */
+  before: string;
+}
+
 /** Normaliza una fila de libSQL al tipo compartido `ChargeEvent`. */
 function toChargeEvent(row: Row): ChargeEvent {
   return {
@@ -73,6 +87,81 @@ export async function getChargeEvents(params: GetChargeEventsParams = {}): Promi
   });
 
   return result.rows.map(toChargeEvent);
+}
+
+/**
+ * Normaliza una fecha a ISO 8601 en UTC.
+ *
+ * `occurred_at` se guarda siempre con `toISOString()`, así que compararlo
+ * lexicográficamente contra otro ISO UTC equivale a compararlo cronológicamente.
+ * Devuelve `null` si la fecha no es parseable.
+ */
+export function normalizeToIsoUtc(value: string): string | null {
+  const timestamp = Date.parse(value);
+
+  if (!Number.isFinite(timestamp)) {
+    return null;
+  }
+
+  return new Date(timestamp).toISOString();
+}
+
+/** Elimina un evento por id. Devuelve `true` si se borró alguna fila. */
+export async function deleteChargeEvent(params: DeleteChargeEventParams): Promise<boolean> {
+  const db = getDb();
+
+  const result = await db.execute({
+    sql: "DELETE FROM charge_events WHERE id = ?",
+    args: [params.id],
+  });
+
+  return result.rowsAffected > 0;
+}
+
+/**
+ * Elimina varios eventos por id en una sola sentencia.
+ *
+ * Devuelve el número de filas borradas (puede ser menor que `ids.length` si
+ * algún id no existía).
+ */
+export async function deleteChargeEvents(params: DeleteChargeEventsParams): Promise<number> {
+  if (params.ids.length === 0) {
+    return 0;
+  }
+
+  const db = getDb();
+  const placeholders = params.ids.map(() => "?").join(", ");
+
+  const result = await db.execute({
+    sql: `DELETE FROM charge_events WHERE id IN (${placeholders})`,
+    args: [...params.ids],
+  });
+
+  return result.rowsAffected;
+}
+
+/**
+ * Elimina todos los eventos anteriores a una fecha (ISO 8601).
+ *
+ * Devuelve el número de filas borradas. Lanza si la fecha no es válida.
+ */
+export async function deleteChargeEventsBefore(
+  params: DeleteChargeEventsBeforeParams
+): Promise<number> {
+  const before = normalizeToIsoUtc(params.before);
+
+  if (before === null) {
+    throw new Error(`Fecha inválida: ${params.before}`);
+  }
+
+  const db = getDb();
+
+  const result = await db.execute({
+    sql: "DELETE FROM charge_events WHERE occurred_at < ?",
+    args: [before],
+  });
+
+  return result.rowsAffected;
 }
 
 export async function savePushSubscription(params: SavePushSubscriptionParams): Promise<PushSubscription> {

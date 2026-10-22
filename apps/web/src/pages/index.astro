@@ -41,6 +41,11 @@ function labelFor(type: string): string {
         box-sizing: border-box;
       }
 
+      /* El atributo `hidden` debe ganar siempre a los `display` de autor. */
+      [hidden] {
+        display: none !important;
+      }
+
       body {
         margin: 0;
         padding: 2rem 1rem;
@@ -160,6 +165,40 @@ function labelFor(type: string): string {
         opacity: 0.5;
         cursor: not-allowed;
       }
+
+      .button-group {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+        flex-wrap: wrap;
+      }
+
+      input[type="date"] {
+        padding: 0.45rem 0.6rem;
+        border-radius: 8px;
+        border: 1px solid var(--border);
+        background: var(--bg);
+        color: var(--text);
+        font: inherit;
+        font-size: 0.9rem;
+      }
+
+      .event-check {
+        flex: 0 0 auto;
+        width: 1.1rem;
+        height: 1.1rem;
+        accent-color: var(--plug);
+        cursor: pointer;
+      }
+
+      button.danger {
+        border-color: rgba(224, 49, 49, 0.5);
+        color: #ff8787;
+      }
+
+      button.danger:hover:not(:disabled) {
+        background: rgba(224, 49, 49, 0.15);
+      }
     </style>
   </head>
   <body>
@@ -183,21 +222,42 @@ function labelFor(type: string): string {
         <small class="push-status">Añádela a tu dispositivo para uso sin conexión y notificaciones.</small>
       </section>
 
-      {
-        events.length === 0 ? (
-          <p class="empty">Todavía no hay eventos registrados.</p>
-        ) : (
-          <ul>
-            {events.map((event) => (
-              <li>
-                <span class={`badge ${event.type}`}>{labelFor(event.type)}</span>
-                <time class="occurred" datetime={event.occurred_at}>{event.occurred_at}</time>
-                <span class="source">{event.source}</span>
-              </li>
-            ))}
-          </ul>
-        )
-      }
+      <section class="push-controls" id="delete-controls" hidden={events.length === 0}>
+        <div class="push-row">
+          <span class="push-status" id="selection-status">0 eventos seleccionados</span>
+          <div class="button-group">
+            <button id="select-all">Todos</button>
+            <button id="select-none">Ninguno</button>
+            <button id="delete-selected" class="danger" disabled>Eliminar seleccionados</button>
+          </div>
+        </div>
+        <div class="push-row">
+          <label class="push-status" for="before-date">Eliminar anteriores al</label>
+          <div class="button-group">
+            <input type="date" id="before-date" />
+            <button id="delete-before" class="danger">Eliminar anteriores</button>
+          </div>
+        </div>
+        <small class="push-status">Las eliminaciones no se pueden deshacer.</small>
+      </section>
+
+      <p class="empty" id="empty-state" hidden={events.length > 0}>Todavía no hay eventos registrados.</p>
+
+      <ul id="event-list" hidden={events.length === 0}>
+        {events.map((event) => (
+          <li data-event-id={event.id}>
+            <input
+              type="checkbox"
+              class="event-check"
+              value={event.id}
+              aria-label={`Seleccionar el evento del ${event.occurred_at}`}
+            />
+            <span class={`badge ${event.type}`}>{labelFor(event.type)}</span>
+            <time class="occurred" datetime={event.occurred_at}>{event.occurred_at}</time>
+            <span class="source">{event.source}</span>
+          </li>
+        ))}
+      </ul>
     </main>
 
     <script>
@@ -404,6 +464,161 @@ function labelFor(type: string): string {
         } else {
           init();
         }
+      })();
+
+      // --- Borrado de registros -------------------------------------------------
+      (function () {
+        const list = document.getElementById('event-list');
+        const emptyState = document.getElementById('empty-state');
+        const controls = document.getElementById('delete-controls');
+        const status = document.getElementById('selection-status');
+        const selectAll = document.getElementById('select-all');
+        const selectNone = document.getElementById('select-none');
+        const deleteSelected = document.getElementById('delete-selected');
+        const beforeDate = document.getElementById('before-date');
+        const deleteBefore = document.getElementById('delete-before');
+
+        if (!list || !deleteSelected || !deleteBefore || !beforeDate) return;
+
+        function checks() {
+          return Array.from(list.querySelectorAll('.event-check'));
+        }
+
+        function selectedIds() {
+          return checks()
+            .filter((check) => check.checked)
+            .map((check) => Number(check.value));
+        }
+
+        function updateSelection() {
+          const count = selectedIds().length;
+
+          if (status) {
+            status.textContent = count === 1 ? '1 evento seleccionado' : `${count} eventos seleccionados`;
+          }
+
+          deleteSelected.disabled = count === 0;
+          deleteSelected.textContent =
+            count > 0 ? `Eliminar seleccionados (${count})` : 'Eliminar seleccionados';
+          deleteBefore.disabled = beforeDate.value === '';
+        }
+
+        function setBusy(busy) {
+          [selectAll, selectNone, deleteSelected, deleteBefore].forEach((button) => {
+            if (button) button.disabled = busy;
+          });
+        }
+
+        async function sendDelete(payload) {
+          const res = await fetch('/api/events', {
+            method: 'DELETE',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload),
+          });
+
+          const data = await res.json().catch(() => ({}));
+
+          if (!res.ok) {
+            throw new Error(data.error || 'No se pudieron borrar los eventos');
+          }
+
+          return data;
+        }
+
+        async function onDeleteSelected() {
+          const ids = selectedIds();
+
+          if (ids.length === 0) return;
+
+          const ok = window.confirm(
+            `¿Eliminar ${ids.length} evento(s) del historial? Esta acción no se puede deshacer.`
+          );
+          if (!ok) return;
+
+          setBusy(true);
+
+          try {
+            await sendDelete({ ids });
+
+            ids.forEach((id) => {
+              const row = list.querySelector(`li[data-event-id="${id}"]`);
+              if (row) row.remove();
+            });
+
+            updateSelection();
+
+            if (list.children.length === 0) {
+              list.hidden = true;
+              if (emptyState) emptyState.hidden = false;
+              if (controls) controls.hidden = true;
+            }
+          } catch (e) {
+            window.alert(e.message);
+          } finally {
+            setBusy(false);
+            updateSelection();
+          }
+        }
+
+        async function onDeleteBefore() {
+          if (!beforeDate.value) return;
+
+          // La web muestra las fechas en hora local, así que el corte también
+          // se interpreta en hora local (medianoche del día elegido).
+          const [year, month, day] = beforeDate.value.split('-').map(Number);
+          const limit = new Date(year, month - 1, day);
+
+          if (Number.isNaN(limit.getTime())) return;
+
+          const readable = limit.toLocaleDateString('es-ES', { dateStyle: 'long' });
+          const ok = window.confirm(
+            `¿Eliminar todos los eventos anteriores al ${readable} (00:00 hora local)? ` +
+              'Esta acción no se puede deshacer.'
+          );
+          if (!ok) return;
+
+          setBusy(true);
+
+          try {
+            await sendDelete({ before: limit.toISOString() });
+            // Puede haber afectado a eventos fuera de los cargados: recargamos.
+            window.location.reload();
+          } catch (e) {
+            window.alert(e.message);
+            setBusy(false);
+            updateSelection();
+          }
+        }
+
+        list.addEventListener('change', (event) => {
+          if (event.target instanceof HTMLInputElement && event.target.classList.contains('event-check')) {
+            updateSelection();
+          }
+        });
+
+        if (selectAll) {
+          selectAll.addEventListener('click', () => {
+            checks().forEach((check) => {
+              check.checked = true;
+            });
+            updateSelection();
+          });
+        }
+
+        if (selectNone) {
+          selectNone.addEventListener('click', () => {
+            checks().forEach((check) => {
+              check.checked = false;
+            });
+            updateSelection();
+          });
+        }
+
+        beforeDate.addEventListener('change', updateSelection);
+        deleteSelected.addEventListener('click', onDeleteSelected);
+        deleteBefore.addEventListener('click', onDeleteBefore);
+
+        updateSelection();
       })();
     </script>
   </body>

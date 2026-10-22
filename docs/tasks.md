@@ -324,6 +324,21 @@
     - RF-074: `.env.example` debe listar las variables VAPID con instrucciones para generarlas (`npx web-push generate-vapid-keys`).
   - **Hecho cuando:** la documentación refleja la configuración PWA/push real.
 
+## Fase 9: Borrado de registros
+
+### T-034: Poder eliminar registros de `charge_events`
+- [x] **T-034: Poder eliminar registros de `charge_events`**
+  - **Duración:** < 30 min
+  - **Dependencias:** T-016, T-033
+  - **RF:**
+    - RF-075: `packages/db/src/queries.ts` debe exportar `deleteChargeEvent({ id })`, `deleteChargeEvents({ ids })` y `deleteChargeEventsBefore({ before })`, devolviendo el número de filas afectadas.
+    - RF-076: El borrado por fecha debe normalizar el límite a ISO 8601 UTC (`toISOString()`) para poder comparar con `occurred_at` de forma lexicográfica.
+    - RF-077: `apps/web/src/pages/api/events.ts` debe exportar un handler `DELETE` que acepte **exactamente uno** de los modos `{ "ids": [...] }` o `{ "before": "<ISO>" }`, devolviendo `400` si el cuerpo es inválido o `404` si ningún id coincide.
+    - RF-078: `apps/web/src/pages/index.astro` debe permitir seleccionar eventos con checkbox, borrarlos en lote y borrar por rango de fechas, con confirmación previa.
+    - RF-079: La fecha del borrado por rango debe interpretarse en la **zona horaria local** del navegador (medianoche local) para coincidir con las fechas que muestra la web.
+    - RF-080: El borrado debe quedar registrado en el log del servidor (nº de filas e IP de origen).
+  - **Hecho cuando:** desde la web se pueden borrar eventos concretos y rangos de fechas; `DELETE /api/events` responde con los códigos documentados; `pnpm typecheck` y `pnpm build` pasan sin errores.
+
 ## Criterio global de cierre
 
-**Hecho cuando:** Todas las tareas T-001–T-033 tienen checkbox marcado, `pnpm typecheck` pasa, `pnpm dev:web` y `pnpm dev:collector` arrancan sin errores, el flujo plug/unplug genera transiciones únicas registradas en `charge_events`, las notificaciones de Telegram y Web Push se envían (o se omiten sin error si no hay credenciales), la web es instalable (manifest + iconos PNG), funciona offline con fallback a `/offline.html` y sirve los eventos de la misma base Turso desplegada en Render.
+**Hecho cuando:** Todas las tareas T-001–T-034 tienen checkbox marcado, `pnpm typecheck` pasa, `pnpm dev:web` y `pnpm dev:collector` arrancan sin errores, el flujo plug/unplug genera transiciones únicas registradas en `charge_events`, las notificaciones de Telegram y Web Push se envían (o se omiten sin error si no hay credenciales), la web es instalable (manifest + iconos PNG), funciona offline con fallback a `/offline.html`, sirve los eventos de la misma base Turso desplegada en Render y permite eliminar registros del historial desde la propia web.

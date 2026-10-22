@@ -241,6 +241,59 @@ rsvg-convert -w 72 -h 72 badge.svg -o badge-72.png
 - **iOS (16.4+):** el push solo funciona con la PWA **instalada** en la pantalla de inicio y el permiso se pide con un gesto del usuario (el botón "Activar").
 - **Requiere `VAPID_*`** configuradas (ver tabla de variables) tanto en la web como en el collector.
 
+## Borrado de registros
+
+Se puede eliminar historial tanto desde la **web** como desde la **API**. El borrado afecta a la base configurada (Turso en producción, SQLite local en desarrollo).
+
+### Capa de datos (`packages/db`)
+
+| Helper | Qué hace |
+|---|---|
+| `deleteChargeEvent({ id })` | Borra un evento por id. Devuelve `true` si borró alguna fila |
+| `deleteChargeEvents({ ids })` | Borra varios eventos en una sola sentencia (`WHERE id IN (...)`). Devuelve el nº de filas borradas |
+| `deleteChargeEventsBefore({ before })` | Borra todos los eventos con `occurred_at < before`. Devuelve el nº de filas borradas |
+| `normalizeToIsoUtc(value)` | Normaliza una fecha a ISO 8601 UTC; devuelve `null` si no es parseable |
+
+`occurred_at` se guarda siempre con `toISOString()`, así que comparar lexicográficamente contra otro ISO UTC equivale a comparar cronológicamente.
+
+### API
+
+`DELETE /api/events` con un cuerpo JSON. Acepta **exactamente uno** de los dos modos:
+
+```jsonc
+// Por id (uno o varios)
+{ "ids": [42, 43] }
+
+// Por fecha: borra todo lo anterior al límite
+{ "before": "2026-01-01T00:00:00.000Z" }
+```
+
+| Situación | Respuesta |
+|---|---|
+| Borrado correcto por id | `200` `{ "deleted": 2, "requested": 2 }` |
+| Borrado correcto por fecha | `200` `{ "deleted": 17 }` |
+| Ningún id coincide | `404` `{ "error": "No se encontraron eventos con esos ids" }` |
+| `ids` y `before` a la vez, o ninguno | `400` |
+| Fecha no parseable | `400` `{ "error": "Fecha inválida" }` |
+| Cuerpo no JSON | `400` `{ "error": "Se esperaba un cuerpo JSON" }` |
+| Error de base de datos | `500` |
+
+**No existe "borrar todo" por HTTP**: para vaciar la tabla está `pnpm db:reset` (`DROP TABLE` + `initSchema()`).
+
+### Web (`apps/web/src/pages/index.astro`)
+
+- Cada fila tiene un **checkbox** para seleccionar eventos.
+- **"Todos" / "Ninguno"** seleccionan o deseleccionan todo el historial cargado.
+- **"Eliminar seleccionados (N)"** borra los eventos marcados.
+- **"Eliminar anteriores al \<fecha\>"** borra todo lo anterior a ese día. La fecha se toma en la **zona horaria local** del navegador (medianoche local) y se envía al servidor como ISO UTC, de modo que coincide con las fechas que muestra la web.
+- Toda eliminación pide confirmación (`window.confirm`) y no se puede deshacer.
+
+### Notas
+
+- **El endpoint va sin autenticación.** La web está desplegada en Render de forma pública: cualquier persona que conozca la URL puede borrar registros del historial. La mitigación actual es la confirmación en la UI y los `400` del servidor. Si hace falta, se puede proteger con un token (`ADMIN_TOKEN`) sin tocar la UI.
+- Cada borrado se registra en el log del servidor con el número de filas afectadas y la IP de origen.
+- El service worker no interfiere: `sw.js` ignora las peticiones non-GET y nunca cachea `/api/*`.
+
 ## Convenciones
 
 - **Ignorar datos locales:** `data/` debe incluirse en `.gitignore` (`data/*.db`, `data/*.sqlite*`).
@@ -253,8 +306,8 @@ rsvg-convert -w 72 -h 72 badge.svg -o badge-72.png
 
 ## Entrypoints
 
-- `apps/web/src/pages/index.astro` – Vista principal con historial
-- `apps/web/src/pages/api/events.ts` (o `events/index.ts`) – API para leer eventos desde la base libSQL
+- `apps/web/src/pages/index.astro` – Vista principal con historial y controles de borrado
+- `apps/web/src/pages/api/events.ts` (o `events/index.ts`) – API para leer (`GET`) y borrar (`DELETE`) eventos desde la base libSQL
 - `apps/collector/src/index.ts` – Entrada del collector
-- `packages/db/src/index.ts` – Cliente + `getChargeEvents`, `insertChargeEvent`, `initSchema`, `migrate`
+- `packages/db/src/index.ts` – Cliente + `getChargeEvents`, `insertChargeEvent`, `deleteChargeEvent`, `deleteChargeEvents`, `deleteChargeEventsBefore`, `initSchema`, `migrate`
 - `packages/shared/src/types.ts` – `ChargeEvent`, `ChargeEventType`, tipos compartidos

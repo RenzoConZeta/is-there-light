@@ -4,6 +4,10 @@ export { resolveDbPath, findRepoRoot } from "./paths.js";
 export {
   insertChargeEvent,
   getChargeEvents,
+  deleteChargeEvent,
+  deleteChargeEvents,
+  deleteChargeEventsBefore,
+  normalizeToIsoUtc,
   savePushSubscription,
   listPushSubscriptions,
   deletePushSubscription,
@@ -11,6 +15,9 @@ export {
 export type {
   InsertChargeEventParams,
   GetChargeEventsParams,
+  DeleteChargeEventParams,
+  DeleteChargeEventsParams,
+  DeleteChargeEventsBeforeParams,
   SavePushSubscriptionParams,
   DeletePushSubscriptionParams,
 } from "./queries.js";
