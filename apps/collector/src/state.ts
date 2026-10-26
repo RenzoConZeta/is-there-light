@@ -6,6 +6,12 @@ import type { ChargeEventType } from "@app/shared";
  */
 let wasPlugged: boolean | null = null;
 
+/**
+ * Transición pendiente de confirmar. Mientras exista, no se avanza wasPlugged
+ * hasta que la escritura a la base de datos tenga éxito.
+ */
+let pendingTransition: ChargeEventType | null = null;
+
 export function getWasPlugged(): boolean | null {
   return wasPlugged;
 }
@@ -14,8 +20,21 @@ export function setWasPlugged(plugged: boolean | null): void {
   wasPlugged = plugged;
 }
 
+export function getPendingTransition(): ChargeEventType | null {
+  return pendingTransition;
+}
+
+export function setPendingTransition(type: ChargeEventType | null): void {
+  pendingTransition = type;
+}
+
+export function clearPendingTransition(): void {
+  pendingTransition = null;
+}
+
 export function resetState(): void {
   wasPlugged = null;
+  pendingTransition = null;
 }
 
 /**
@@ -23,18 +42,20 @@ export function resetState(): void {
  * cambio real respecto de la anterior, devuelve el tipo de evento. La primera
  * lectura únicamente sincroniza el estado (sin evento).
  *
- * `onTransition` es opcional: quien necesite reaccionar de forma imperativa
- * puede pasarlo, pero el valor de retorno ya informa la transición detectada.
+ * NO se avanza wasPlugged hasta que la persistencia se confirme. Mientras haya
+ * una transición pendiente, no se genera una nueva.
  *
  * Devuelve la transición detectada o `null` si no hubo cambio.
  */
-export function onPowerChange(
-  plugged: boolean,
-  onTransition?: (type: ChargeEventType) => void
-): ChargeEventType | null {
+export function onPowerChange(plugged: boolean): ChargeEventType | null {
   if (wasPlugged === null) {
     // Sincroniza el estado inicial. NO insertar evento.
     wasPlugged = plugged;
+    return null;
+  }
+
+  // Si ya hay una transición pendiente, no generar otra nueva
+  if (pendingTransition !== null) {
     return null;
   }
 
@@ -43,10 +64,20 @@ export function onPowerChange(
   }
 
   const type: ChargeEventType = plugged ? "plug" : "unplug";
-  // Se actualiza antes de notificar: si la persistencia falla, la próxima
-  // lectura no debe volver a intentar la misma transición como si fuese nueva.
-  wasPlugged = plugged;
-  onTransition?.(type);
-
+  // NO actualizamos wasPlugged hasta confirmar la escritura
+  pendingTransition = type;
   return type;
+}
+
+/**
+ * Confirma que la transición pendiente se guardó correctamente.
+ * Actualiza wasPlugged al valor correspondiente.
+ */
+export function confirmPendingTransition(): void {
+  if (pendingTransition === "plug") {
+    wasPlugged = true;
+  } else if (pendingTransition === "unplug") {
+    wasPlugged = false;
+  }
+  pendingTransition = null;
 }

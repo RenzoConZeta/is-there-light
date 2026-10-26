@@ -4,7 +4,7 @@ import { fileURLToPath } from "url";
 import { closeDb, initSchema, insertChargeEvent, resolveDbPath } from "@app/db";
 import { notifyPlug, notifyUnplug } from "./notify.js";
 import { detectPlatform, getStrategy, type Platform, type PowerStrategy } from "./platform.js";
-import { getWasPlugged, onPowerChange } from "./state.js";
+import { confirmPendingTransition, getPendingTransition, getWasPlugged, onPowerChange, setPendingTransition } from "./state.js";
 import { resolveIntervalMs, startPolling } from "./powerPoller.js";
 import { resolveDebounceMs, startWatching } from "./powerWatcher.js";
 
@@ -43,32 +43,68 @@ function loadEnvFiles(): void {
   }
 }
 
+let pendingOccurredAt: string | null = null;
+
 /** Registra la lectura: sólo persiste cambios reales de estado. */
 async function handleReading(plugged: boolean): Promise<void> {
   const alreadySynchronized = getWasPlugged() !== null;
+  const pending = getPendingTransition();
+
+  // Si hay una transición pendiente, reintentamos hasta que se guarde con éxito
+  if (pending && pendingOccurredAt) {
+    try {
+      await insertChargeEvent({
+        type: pending,
+        occurred_at: pendingOccurredAt,
+        source: SOURCE,
+      });
+
+      const notify = pending === "plug" ? notifyPlug : notifyUnplug;
+      void notify(pendingOccurredAt).catch((err) => {
+        logWarn(`unexpected error in notify${pending === "plug" ? "Plug" : "Unplug"}`, err);
+      });
+
+      confirmPendingTransition();
+      pendingOccurredAt = null;
+      logInfo(`Transición ${pending} registrada tras reintento (plugged=${plugged})`);
+      return;
+    } catch (error) {
+      logWarn(`No se pudo registrar la transición pendiente (plugged=${plugged})`, error);
+      return;
+    }
+  }
+
   const transition = onPowerChange(plugged);
 
   try {
     if (transition) {
       const occurred_at = new Date().toISOString();
-      await insertChargeEvent({
-        type: transition,
-        occurred_at,
-        source: SOURCE,
-      });
+      pendingOccurredAt = occurred_at;
+      try {
+        await insertChargeEvent({
+          type: transition,
+          occurred_at,
+          source: SOURCE,
+        });
 
-      const notify = transition === "plug" ? notifyPlug : notifyUnplug;
-      // Notificación no bloqueante y tolerante a fallos
-      void notify(occurred_at).catch((err) => {
-        logWarn(`unexpected error in notify${transition === "plug" ? "Plug" : "Unplug"}`, err);
-      });
+        const notify = transition === "plug" ? notifyPlug : notifyUnplug;
+        void notify(occurred_at).catch((err) => {
+          logWarn(`unexpected error in notify${transition === "plug" ? "Plug" : "Unplug"}`, err);
+        });
 
-      logInfo(`Transición ${transition} registrada (plugged=${plugged})`);
+        confirmPendingTransition();
+        pendingOccurredAt = null;
+        logInfo(`Transición ${transition} registrada (plugged=${plugged})`);
+      } catch (error) {
+        // No avanzamos wasPlugged ni limpiamos el pending: reintentaremos en el siguiente tick
+        logWarn(`No se pudo registrar la transición (plugged=${plugged}), se reintentará`, error);
+        return;
+      }
     } else if (!alreadySynchronized) {
       logInfo(`Estado inicial sincronizado: plugged=${plugged} (sin evento)`);
     }
   } catch (error) {
-    logWarn(`No se pudo registrar la transición (plugged=${plugged})`, error);
+    logWarn(`Error al procesar lectura de energía (plugged=${plugged})`, error);
   }
 }
 
