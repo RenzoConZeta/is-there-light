@@ -1,5 +1,11 @@
 import type { ChargeEventType } from "@app/shared";
 
+export interface PendingTransition {
+  type: ChargeEventType;
+  /** Hora real en que se detectó la transición (ISO 8601 UTC). */
+  occurred_at: string;
+}
+
 /**
  * Estado previo de conexión. `null` significa "todavía sin sincronizar", que
  * es el estado del arranque: mientras valga `null` nunca se persiste un evento.
@@ -7,10 +13,16 @@ import type { ChargeEventType } from "@app/shared";
 let wasPlugged: boolean | null = null;
 
 /**
- * Transición pendiente de confirmar. Mientras exista, no se avanza wasPlugged
- * hasta que la escritura a la base de datos tenga éxito.
+ * Cola FIFO de transiciones pendientes de escribir en la base.
+ *
+ * Se encolan con su `occurred_at` real en cuanto se detectan, de modo que si la
+ * red (Turso) falla durante minutos, al recuperarse se registran todas con la
+ * hora correcta y sin perder las intermedias.
+ *
+ * La cola vive sólo en memoria: si el collector se reinicia antes de vaciarla,
+ * esas transiciones se pierden (igual que antes de este cambio).
  */
-let pendingTransition: ChargeEventType | null = null;
+let pending: PendingTransition[] = [];
 
 export function getWasPlugged(): boolean | null {
   return wasPlugged;
@@ -20,42 +32,39 @@ export function setWasPlugged(plugged: boolean | null): void {
   wasPlugged = plugged;
 }
 
-export function getPendingTransition(): ChargeEventType | null {
-  return pendingTransition;
+export function peekPending(): PendingTransition | null {
+  return pending[0] ?? null;
 }
 
-export function setPendingTransition(type: ChargeEventType | null): void {
-  pendingTransition = type;
+/** Quita la primera transición de la cola (tras confirmar su escritura). */
+export function shiftPending(): PendingTransition | null {
+  return pending.shift() ?? null;
 }
 
-export function clearPendingTransition(): void {
-  pendingTransition = null;
+export function pendingCount(): number {
+  return pending.length;
 }
 
 export function resetState(): void {
   wasPlugged = null;
-  pendingTransition = null;
+  pending = [];
 }
 
 /**
  * Registra una lectura del estado de energía y, sólo cuando representa un
- * cambio real respecto de la anterior, devuelve el tipo de evento. La primera
- * lectura únicamente sincroniza el estado (sin evento).
+ * cambio real respecto de la anterior, encola la transición y la devuelve.
+ * La primera lectura únicamente sincroniza el estado (sin evento).
  *
- * NO se avanza wasPlugged hasta que la persistencia se confirme. Mientras haya
- * una transición pendiente, no se genera una nueva.
+ * `wasPlugged` avanza en el momento de detectar la transición porque el evento
+ * ya queda en la cola: así una segunda transición durante el mismo corte de red
+ * también se registra con su hora real.
  *
  * Devuelve la transición detectada o `null` si no hubo cambio.
  */
-export function onPowerChange(plugged: boolean): ChargeEventType | null {
+export function onPowerChange(plugged: boolean): PendingTransition | null {
   if (wasPlugged === null) {
     // Sincroniza el estado inicial. NO insertar evento.
     wasPlugged = plugged;
-    return null;
-  }
-
-  // Si ya hay una transición pendiente, no generar otra nueva
-  if (pendingTransition !== null) {
     return null;
   }
 
@@ -63,21 +72,13 @@ export function onPowerChange(plugged: boolean): ChargeEventType | null {
     return null;
   }
 
-  const type: ChargeEventType = plugged ? "plug" : "unplug";
-  // NO actualizamos wasPlugged hasta confirmar la escritura
-  pendingTransition = type;
-  return type;
-}
+  const transition: PendingTransition = {
+    type: plugged ? "plug" : "unplug",
+    occurred_at: new Date().toISOString(),
+  };
 
-/**
- * Confirma que la transición pendiente se guardó correctamente.
- * Actualiza wasPlugged al valor correspondiente.
- */
-export function confirmPendingTransition(): void {
-  if (pendingTransition === "plug") {
-    wasPlugged = true;
-  } else if (pendingTransition === "unplug") {
-    wasPlugged = false;
-  }
-  pendingTransition = null;
+  wasPlugged = plugged;
+  pending.push(transition);
+
+  return transition;
 }

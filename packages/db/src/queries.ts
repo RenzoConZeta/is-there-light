@@ -8,6 +8,12 @@ export interface InsertChargeEventParams {
   source?: string;
 }
 
+export interface InsertChargeEventResult {
+  event: ChargeEvent;
+  /** `true` si la fila se creó en esta llamada; `false` si ya existía. */
+  inserted: boolean;
+}
+
 export interface GetChargeEventsParams {
   limit?: number;
   offset?: number;
@@ -59,21 +65,49 @@ function toPushSubscription(row: Row): PushSubscription {
   };
 }
 
-export async function insertChargeEvent(params: InsertChargeEventParams): Promise<ChargeEvent> {
+/**
+ * Inserta un evento sólo si no existe ya uno con el mismo `type` y `occurred_at`.
+ *
+ * La comprobación va dentro de la misma sentencia (`WHERE NOT EXISTS`), así que
+ * dos intentos concurrentes (p. ej. reintentos tras un corte de red) no pueden
+ * crear filas duplicadas. Es idempotente **sin** índice único ni cambios de
+ * esquema en `charge_events`.
+ *
+ * Devuelve el evento y si esta llamada lo insertó (`inserted`), para poder
+ * omitir notificaciones repetidas cuando el evento ya estaba registrado.
+ */
+export async function insertChargeEvent(params: InsertChargeEventParams): Promise<InsertChargeEventResult> {
   const db = getDb();
   const source = params.source || "collector";
 
   const result = await db.execute({
-    sql: "INSERT INTO charge_events (type, occurred_at, source) VALUES (?, ?, ?)",
-    args: [params.type, params.occurred_at, source],
+    sql: `INSERT INTO charge_events (type, occurred_at, source)
+          SELECT ?, ?, ?
+          WHERE NOT EXISTS (
+            SELECT 1 FROM charge_events WHERE type = ? AND occurred_at = ?
+          )`,
+    args: [params.type, params.occurred_at, source, params.type, params.occurred_at],
   });
+
+  if (result.rowsAffected === 0) {
+    const existing = await db.execute({
+      sql: "SELECT * FROM charge_events WHERE type = ? AND occurred_at = ?",
+      args: [params.type, params.occurred_at],
+    });
+
+    if (existing.rows.length === 0) {
+      throw new Error(`No se pudo insertar ni encontrar el evento ${params.type}@${params.occurred_at}`);
+    }
+
+    return { event: toChargeEvent(existing.rows[0]), inserted: false };
+  }
 
   const inserted = await db.execute({
     sql: "SELECT * FROM charge_events WHERE id = ?",
     args: [Number(result.lastInsertRowid)],
   });
 
-  return toChargeEvent(inserted.rows[0]);
+  return { event: toChargeEvent(inserted.rows[0]), inserted: true };
 }
 
 export async function getChargeEvents(params: GetChargeEventsParams = {}): Promise<ChargeEvent[]> {

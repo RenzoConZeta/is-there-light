@@ -4,15 +4,13 @@ import { fileURLToPath } from "url";
 import { closeDb, initSchema, insertChargeEvent, resolveDbPath } from "@app/db";
 import { notifyPlug, notifyUnplug } from "./notify.js";
 import { detectPlatform, getStrategy, type Platform, type PowerStrategy } from "./platform.js";
-import { confirmPendingTransition, getPendingTransition, getWasPlugged, onPowerChange, setPendingTransition } from "./state.js";
+import { getWasPlugged, onPowerChange, peekPending, pendingCount, shiftPending } from "./state.js";
 import { resolveIntervalMs, startPolling } from "./powerPoller.js";
 import { resolveDebounceMs, startWatching } from "./powerWatcher.js";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 // `src/` y `dist/` cuelgan de apps/collector, así que la raíz queda 3 niveles arriba.
 const REPO_ROOT = join(HERE, "..", "..", "..");
-
-const SOURCE = "collector";
 
 interface CollectorHandle {
   stop(): void;
@@ -43,69 +41,111 @@ function loadEnvFiles(): void {
   }
 }
 
-let pendingOccurredAt: string | null = null;
+const SOURCE = "collector";
 
-/** Registra la lectura: sólo persiste cambios reales de estado. */
-async function handleReading(plugged: boolean): Promise<void> {
-  const alreadySynchronized = getWasPlugged() !== null;
-  const pending = getPendingTransition();
+/** Backoff de reintento cuando la escritura a Turso falla (sin red). */
+const BASE_RETRY_MS = 2_000;
+const MAX_RETRY_MS = 30_000;
 
-  // Si hay una transición pendiente, reintentamos hasta que se guarde con éxito
-  if (pending && pendingOccurredAt) {
-    try {
-      await insertChargeEvent({
-        type: pending,
-        occurred_at: pendingOccurredAt,
+/** Evita que dos lecturas lancen escrituras simultáneas (una sola en vuelo). */
+let flushing = false;
+let retryDelayMs = BASE_RETRY_MS;
+let retryTimer: NodeJS.Timeout | null = null;
+
+function formatDelay(occurredAt: string): string {
+  const elapsedMs = Date.now() - Date.parse(occurredAt);
+
+  if (!Number.isFinite(elapsedMs) || elapsedMs < 1_000) {
+    return "sin retraso";
+  }
+
+  const seconds = Math.round(elapsedMs / 1_000);
+  return seconds < 60 ? `${seconds} s de retraso` : `${Math.round(seconds / 60)} min de retraso`;
+}
+
+function scheduleRetry(): void {
+  if (retryTimer) {
+    return;
+  }
+
+  retryTimer = setTimeout(() => {
+    retryTimer = null;
+    void flushPending();
+  }, retryDelayMs);
+
+  retryDelayMs = Math.min(retryDelayMs * 2, MAX_RETRY_MS);
+}
+
+/**
+ * Vacía la cola de transiciones pendientes, de a una escritura por vez.
+ *
+ * Si Turso falla (típico cuando se corta internet junto con la luz), el evento
+ * queda en la cola y se reintenta con backoff exponencial (2 s → 30 s). Nunca
+ * hay dos `INSERT` en vuelo, así que no se generan duplicados ni notificaciones
+ * repetidas. Los eventos ya registrados no se vuelven a insertar ni notificar.
+ */
+async function flushPending(): Promise<void> {
+  // Una sola escritura en vuelo y backoff respetado: mientras haya un reintento
+  // programado, las lecturas nuevas sólo encolan (no adelantan el intento).
+  if (flushing || retryTimer) {
+    return;
+  }
+
+  flushing = true;
+
+  try {
+    for (;;) {
+      const pending = peekPending();
+
+      if (!pending) {
+        retryDelayMs = BASE_RETRY_MS;
+        return;
+      }
+
+      const { inserted } = await insertChargeEvent({
+        type: pending.type,
+        occurred_at: pending.occurred_at,
         source: SOURCE,
       });
 
-      const notify = pending === "plug" ? notifyPlug : notifyUnplug;
-      void notify(pendingOccurredAt).catch((err) => {
-        logWarn(`unexpected error in notify${pending === "plug" ? "Plug" : "Unplug"}`, err);
-      });
+      shiftPending();
+      retryDelayMs = BASE_RETRY_MS;
 
-      confirmPendingTransition();
-      pendingOccurredAt = null;
-      logInfo(`Transición ${pending} registrada tras reintento (plugged=${plugged})`);
-      return;
-    } catch (error) {
-      logWarn(`No se pudo registrar la transición pendiente (plugged=${plugged})`, error);
-      return;
-    }
-  }
-
-  const transition = onPowerChange(plugged);
-
-  try {
-    if (transition) {
-      const occurred_at = new Date().toISOString();
-      pendingOccurredAt = occurred_at;
-      try {
-        await insertChargeEvent({
-          type: transition,
-          occurred_at,
-          source: SOURCE,
-        });
-
-        const notify = transition === "plug" ? notifyPlug : notifyUnplug;
-        void notify(occurred_at).catch((err) => {
-          logWarn(`unexpected error in notify${transition === "plug" ? "Plug" : "Unplug"}`, err);
-        });
-
-        confirmPendingTransition();
-        pendingOccurredAt = null;
-        logInfo(`Transición ${transition} registrada (plugged=${plugged})`);
-      } catch (error) {
-        // No avanzamos wasPlugged ni limpiamos el pending: reintentaremos en el siguiente tick
-        logWarn(`No se pudo registrar la transición (plugged=${plugged}), se reintentará`, error);
-        return;
+      if (!inserted) {
+        logInfo(`Transición ${pending.type} ya registrada (${pending.occurred_at}); no se duplica ni se notifica`);
+        continue;
       }
-    } else if (!alreadySynchronized) {
-      logInfo(`Estado inicial sincronizado: plugged=${plugged} (sin evento)`);
+
+      logInfo(`Transición ${pending.type} registrada (${pending.occurred_at}, ${formatDelay(pending.occurred_at)})`);
+
+      const notify = pending.type === "plug" ? notifyPlug : notifyUnplug;
+      void notify(pending.occurred_at).catch((error) => {
+        logWarn(`unexpected error in notify${pending.type === "plug" ? "Plug" : "Unplug"}`, error);
+      });
     }
   } catch (error) {
-    logWarn(`Error al procesar lectura de energía (plugged=${plugged})`, error);
+    logWarn(
+      `No se pudieron registrar ${pendingCount()} transición(es) pendientes; reintento en ${retryDelayMs} ms`,
+      error
+    );
+    scheduleRetry();
+  } finally {
+    flushing = false;
   }
+}
+
+/** Registra la lectura: sólo encola cambios reales de estado y dispara el envío. */
+function handleReading(plugged: boolean): void {
+  const wasSynchronized = getWasPlugged() !== null;
+  const transition = onPowerChange(plugged);
+
+  if (transition) {
+    logInfo(`Transición ${transition.type} detectada (plugged=${plugged}, ${transition.occurred_at})`);
+  } else if (!wasSynchronized) {
+    logInfo(`Estado inicial sincronizado: plugged=${plugged} (sin evento)`);
+  }
+
+  void flushPending();
 }
 
 /** Arranca la estrategia elegida, con polling como fallback si `fs.watch()` falla. */
@@ -164,6 +204,16 @@ async function main(): Promise<void> {
   const shutdown = (signal: string): void => {
     logInfo(`Señal ${signal}: deteniendo collector`);
     handle.stop();
+
+    if (retryTimer) {
+      clearTimeout(retryTimer);
+      retryTimer = null;
+    }
+
+    if (pendingCount() > 0) {
+      logWarn(`${pendingCount()} transición(es) sin registrar; la cola en memoria se descarta al salir`);
+    }
+
     closeDb();
     process.exit(0);
   };

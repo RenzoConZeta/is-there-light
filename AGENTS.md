@@ -47,6 +47,8 @@ Tabla `charge_events`:
 
 **Notas:** Con Turso la concurrencia la gestiona el servidor, así que ya **no se usa** `PRAGMA journal_mode = WAL` (era relevante con `better-sqlite3` local). El esquema se crea de forma idempotente con `initSchema()`.
 
+**Idempotencia:** `insertChargeEvent()` sólo inserta si no existe ya un evento con el mismo `type` y `occurred_at` (`INSERT ... SELECT ... WHERE NOT EXISTS`). Así los reintentos tras un corte de red no crean filas duplicadas, **sin índice único ni cambios de esquema**.
+
 ## Comandos
 
 Todos los comandos se ejecutan desde la raíz con `pnpm`.
@@ -117,35 +119,48 @@ Se prioriza **event-driven** cuando es posible, con **polling** como fallback.
 
 ### Detección de transiciones (sin falsos eventos al arrancar)
 
-Nunca se guarda un evento al iniciar el proceso. Se usa `wasPlugged: boolean | null`.
+Nunca se guarda un evento al iniciar el proceso. Se usa `wasPlugged: boolean | null` y una cola FIFO de transiciones pendientes:
 
 ```ts
 let wasPlugged: boolean | null = null;
+const pending: PendingTransition[] = [];
 
-function onPowerChange(plugged: boolean) {
+function onPowerChange(plugged: boolean): PendingTransition | null {
   if (wasPlugged === null) {
     // Sincroniza estado inicial. NO insertar evento.
     wasPlugged = plugged;
-    return;
+    return null;
   }
-  if (plugged !== wasPlugged) {
-    const type = plugged ? "plug" : "unplug";
-    db.insertChargeEvent({ type, occurred_at: new Date().toISOString() });
-    wasPlugged = plugged;
-  }
+  if (plugged === wasPlugged) return null;
+
+  // La transición se encola con su hora real; wasPlugged avanza de inmediato.
+  const transition = { type: plugged ? "plug" : "unplug", occurred_at: new Date().toISOString() };
+  wasPlugged = plugged;
+  pending.push(transition);
+  return transition;
 }
 ```
+
+### Resiliencia ante cortes de red
+
+Cuando se corta la luz también suele caer internet, así que Turso deja de responder durante minutos. Para no perder eventos ni duplicarlos:
+
+- **Cola en memoria:** cada transición se encola con su `occurred_at` real. Las transiciones intermedias de un mismo corte también se registran (con su hora real) cuando vuelve la red.
+- **Una sola escritura en vuelo:** `flushPending()` usa un guard (`flushing`) y vacía la cola de a una, así que las lecturas cada 2 s no disparan `INSERT` concurrentes del mismo evento.
+- **Backoff exponencial:** tras un fallo se reintenta a los 2 s, 4 s, 8 s… hasta 30 s (`BASE_RETRY_MS`/`MAX_RETRY_MS` en `index.ts`). Las lecturas nuevas no adelantan el reintento.
+- **Sin duplicados ni notificaciones repetidas:** `insertChargeEvent()` es idempotente por `(type, occurred_at)`; `notifyPlug`/`notifyUnplug` sólo se envían si la fila se creó en esa llamada.
+- **Limitación:** la cola vive en memoria. Si el collector (o pm2) se reinicia durante el corte, las transiciones pendientes se pierden; al salir se loguea cuántas quedaron sin registrar.
 
 ### Archivos esperados
 
 ```text
 apps/collector/src/
-├── index.ts        # Orquesta: elige estrategia por plataforma + suscribe + escribe a DB
+├── index.ts        # Orquesta: estrategia por plataforma + cola pendiente + escritura a DB con reintentos
 ├── platform.ts     # Detecta OS ('linux'|'darwin'|'win32') y retorna watcher/poller
 ├── powerWatcher.ts # Estrategia event-based con fs.watch (Linux)
 ├── powerPoller.ts  # Estrategia polling (macOS/Windows)
 ├── detectPlug.ts   # Parseo de salida por SO
-└── state.ts        # Estado anterior (wasPlugged) + helpers
+└── state.ts        # Estado anterior (wasPlugged) + cola de transiciones pendientes
 ```
 
 ### ¿Debe correr siempre?

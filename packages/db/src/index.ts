@@ -14,6 +14,7 @@ export {
 } from "./queries.js";
 export type {
   InsertChargeEventParams,
+  InsertChargeEventResult,
   GetChargeEventsParams,
   DeleteChargeEventParams,
   DeleteChargeEventsParams,
